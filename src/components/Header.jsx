@@ -1,5 +1,5 @@
 // components/Header.jsx
-import { CalendarDays, Heart, LayoutDashboard, ListChecks, TrendingUp } from 'lucide-react';
+import { CalendarDays, Heart, LayoutDashboard, ListChecks, Wifi, WifiOff } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import { formatDate } from '../lib/utils.js';
 
@@ -10,7 +10,7 @@ const TABS = [
 ];
 
 export default function Header() {
-  const { totalTasks, completedTasks, bothTasks, progressPct, activeTab, setActiveTab } = useApp();
+  const { totalTasks, completedTasks, bothTasks, progressPct, activeTab, setActiveTab, isOnline } = useApp();
 
   const progressColor =
     progressPct >= 80 ? '#00B894' :
@@ -33,6 +33,15 @@ export default function Header() {
               {formatDate()}
             </p>
             <Heart size={14} fill="white" className="animate-heartbeat opacity-80" />
+            {/* Sync status */}
+            <span
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-700"
+              style={{ background: isOnline ? 'rgba(0,184,148,0.3)' : 'rgba(255,255,255,0.2)' }}
+            >
+              {isOnline
+                ? <><Wifi size={10} /> Real-time</>
+                : <><WifiOff size={10} /> Local</>}
+            </span>
           </div>
           <h1 className="text-lg sm:text-2xl font-800 tracking-tight mb-1" style={{ fontFamily: 'Dancing Script, cursive' }}>
             ✨ SCHEDULE BELONG TO THI & PHONG ✨

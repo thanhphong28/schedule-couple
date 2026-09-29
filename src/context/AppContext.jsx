@@ -1,6 +1,7 @@
 // context/AppContext.jsx
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { getInitialTasks } from '../data/initialTasks.js';
+import { isSupabaseReady, supabase } from '../lib/supabase.js';
 import { nanoid } from '../lib/utils.js';
 
 const AppContext = createContext(null);
@@ -15,57 +16,125 @@ function lsSet(key, val) {
   localStorage.setItem(key, JSON.stringify(val));
 }
 
+// ── Supabase helpers ──────────────────────────────────────────────────────────
+async function sbGetTasks() {
+  const { data, error } = await supabase
+    .from('tasks').select('*').order('sort_order', { ascending: true });
+  if (error) throw error;
+  return data;
+}
+async function sbGetReviews() {
+  const { data, error } = await supabase
+    .from('weekly_reviews').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
 export function AppProvider({ children }) {
-  const [tasks, setTasksState] = useState(() => {
+  const [tasks, setTasksRaw] = useState(() => {
     const saved = lsGet(LS_TASKS);
     return saved && saved.length > 0 ? saved : getInitialTasks();
   });
-  const [reviews, setReviewsState] = useState(() => lsGet(LS_REVIEWS) || []);
+  const [reviews, setReviewsRaw] = useState(() => lsGet(LS_REVIEWS) || []);
   const [activeTab, setActiveTab] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
+  const [synced, setSynced] = useState(false); // true after first Supabase load
 
-  // Persist to localStorage
-  const tasksRef = useRef(tasks);
-  useEffect(() => {
-    tasksRef.current = tasks;
-    lsSet(LS_TASKS, tasks);
-  }, [tasks]);
+  // ── Persist to localStorage ────────────────────────────────────────────────
+  function setTasks(val) {
+    setTasksRaw(val);
+    lsSet(LS_TASKS, val);
+  }
+  function setReviews(val) {
+    setReviewsRaw(val);
+    lsSet(LS_REVIEWS, val);
+  }
 
+  // ── On mount: load from Supabase (if configured) ──────────────────────────
   useEffect(() => {
-    lsSet(LS_REVIEWS, reviews);
-  }, [reviews]);
+    if (!isSupabaseReady) {
+      // Cross-tab sync via storage event
+      const handler = (e) => {
+        if (e.key === LS_TASKS && e.newValue) {
+          try { setTasksRaw(JSON.parse(e.newValue)); } catch {}
+        }
+        if (e.key === LS_REVIEWS && e.newValue) {
+          try { setReviewsRaw(JSON.parse(e.newValue)); } catch {}
+        }
+      };
+      window.addEventListener('storage', handler);
+      return () => window.removeEventListener('storage', handler);
+    }
 
-  // Cross-tab sync via storage event
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.key === LS_TASKS && e.newValue) {
-        try {
-          const updated = JSON.parse(e.newValue);
-          setTasksState(updated);
-        } catch {}
-      }
-      if (e.key === LS_REVIEWS && e.newValue) {
-        try {
-          const updated = JSON.parse(e.newValue);
-          setReviewsState(updated);
-        } catch {}
-      }
+    // Load initial data from Supabase
+    Promise.all([sbGetTasks(), sbGetReviews()]).then(([t, r]) => {
+      if (t.length > 0) setTasks(t); // prefer remote data
+      if (r.length > 0) setReviews(r);
+      setSynced(true);
+    }).catch(err => {
+      console.warn('Supabase load failed, using localStorage', err);
+      setSynced(true);
+    });
+
+    // Real-time subscriptions
+    const taskSub = supabase
+      .channel('tasks-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        sbGetTasks().then(setTasks).catch(console.error);
+      })
+      .subscribe();
+
+    const reviewSub = supabase
+      .channel('reviews-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_reviews' }, () => {
+        sbGetReviews().then(setReviews).catch(console.error);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(taskSub);
+      supabase.removeChannel(reviewSub);
     };
-    window.addEventListener('storage', handler);
-    return () => window.removeEventListener('storage', handler);
   }, []);
 
-  // Task operations
+  // ── Upsert helper ─────────────────────────────────────────────────────────
+  async function sbUpsertTask(task) {
+    if (!isSupabaseReady) return;
+    await supabase.from('tasks').upsert(task);
+  }
+  async function sbUpsertReview(review) {
+    if (!isSupabaseReady) return;
+    await supabase.from('weekly_reviews').upsert(review);
+  }
+  async function sbDeleteTask(id) {
+    if (!isSupabaseReady) return;
+    await supabase.from('tasks').delete().eq('id', id);
+  }
+  async function sbDeleteReview(id) {
+    if (!isSupabaseReady) return;
+    await supabase.from('weekly_reviews').delete().eq('id', id);
+  }
+
+  // ── Task operations ────────────────────────────────────────────────────────
   function toggleTask(id) {
-    setTasksState(prev => prev.map(t =>
-      t.id === id
-        ? { ...t, is_completed: !t.is_completed, status: !t.is_completed ? 'DONE' : 'TODO' }
-        : t
-    ));
+    setTasks(prev => {
+      const next = prev.map(t =>
+        t.id === id
+          ? { ...t, is_completed: !t.is_completed, status: !t.is_completed ? 'DONE' : 'TODO' }
+          : t
+      );
+      const updated = next.find(t => t.id === id);
+      if (updated) sbUpsertTask(updated);
+      return next;
+    });
   }
 
   function updateTask(id, updates) {
-    setTasksState(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    setTasks(prev => {
+      const next = prev.map(t => t.id === id ? { ...t, ...updates } : t);
+      const updated = next.find(t => t.id === id);
+      if (updated) sbUpsertTask(updated);
+      return next;
+    });
   }
 
   function addTask(task) {
@@ -76,16 +145,17 @@ export function AppProvider({ children }) {
       sort_order: tasks.length + 1,
       ...task,
     };
-    setTasksState(prev => [...prev, newTask]);
+    setTasks(prev => [...prev, newTask]);
+    sbUpsertTask(newTask);
     return newTask;
   }
 
   function deleteTask(id) {
-    setTasksState(prev => prev.filter(t => t.id !== id));
+    setTasks(prev => prev.filter(t => t.id !== id));
+    sbDeleteTask(id);
   }
 
   function resetWeek() {
-    // Save snapshot to reviews before reset
     const completedCount = tasks.filter(t => t.is_completed).length;
     const sportCount = tasks.filter(t => t.category === 'SPORT' && t.is_completed).length;
     const pct = Math.round((completedCount / tasks.length) * 100);
@@ -100,9 +170,10 @@ export function AppProvider({ children }) {
       next_plan: '',
       created_at: new Date().toISOString(),
     };
-    setReviewsState(prev => [review, ...prev]);
-    // Reset all tasks
-    setTasksState(prev => prev.map(t => ({ ...t, is_completed: false, status: 'TODO' })));
+    addReview(review);
+    const reset = tasks.map(t => ({ ...t, is_completed: false, status: 'TODO' }));
+    setTasks(reset);
+    reset.forEach(t => sbUpsertTask(t));
   }
 
   function getCurrentWeekLabel() {
@@ -112,29 +183,37 @@ export function AppProvider({ children }) {
     return `Tuần ${week} - Tháng ${now.getMonth() + 1}/${now.getFullYear()}`;
   }
 
-  // Review operations
+  // ── Review operations ──────────────────────────────────────────────────────
   function addReview(review) {
     const r = { id: nanoid(), created_at: new Date().toISOString(), ...review };
-    setReviewsState(prev => [r, ...prev]);
+    setReviews(prev => [r, ...prev]);
+    sbUpsertReview(r);
     return r;
   }
 
   function updateReview(id, updates) {
-    setReviewsState(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+    setReviews(prev => {
+      const next = prev.map(r => r.id === id ? { ...r, ...updates } : r);
+      const updated = next.find(r => r.id === id);
+      if (updated) sbUpsertReview(updated);
+      return next;
+    });
   }
 
   function deleteReview(id) {
-    setReviewsState(prev => prev.filter(r => r.id !== id));
+    setReviews(prev => prev.filter(r => r.id !== id));
+    sbDeleteReview(id);
   }
 
-  // Computed stats
+  // ── Computed stats ─────────────────────────────────────────────────────────
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter(t => t.is_completed).length;
   const bothTasks = tasks.filter(t => t.person === 'BOTH').length;
   const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   const value = {
-    tasks, reviews, activeTab, setActiveTab, isLoading,
+    tasks, reviews, activeTab, setActiveTab,
+    isOnline: isSupabaseReady,
     totalTasks, completedTasks, bothTasks, progressPct,
     toggleTask, updateTask, addTask, deleteTask, resetWeek,
     addReview, updateReview, deleteReview,

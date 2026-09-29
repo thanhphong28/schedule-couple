@@ -45,7 +45,7 @@ export default function Tab2WeekPlan() {
         if (filterCategory !== 'ALL' && t.category !== filterCategory) return false;
         if (filterStatus === 'DONE' && !t.is_completed) return false;
         if (filterStatus === 'TODO' && t.is_completed) return false;
-        if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
+        if (search && !(t.title || '').toLowerCase().includes(search.toLowerCase())) return false;
         return true;
       })
       .sort((a, b) => a.day - b.day || a.sort_order - b.sort_order);

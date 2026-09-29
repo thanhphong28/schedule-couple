@@ -101,7 +101,7 @@ export function TaskModal({ task, onClose, onSave }) {
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
   const handleSave = () => {
-    if (!form.title.trim()) return;
+    if (!form.title || !form.title.trim()) return;
     const sortedDays = [...selectedDays].sort();
     
     const baseForm = { ...form };

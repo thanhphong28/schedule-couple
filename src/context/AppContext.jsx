@@ -146,19 +146,35 @@ export function AppProvider({ children }) {
   // ── Upsert helper ─────────────────────────────────────────────────────────
   async function sbUpsertTask(task) {
     if (!isSupabaseReady) return;
-    await supabase.from('tasks').upsert(task);
+    const { error } = await supabase.from('tasks').upsert(task);
+    if (error) {
+      console.error('Lỗi lưu công việc:', error);
+      alert('Lỗi lưu dữ liệu lên Database: ' + error.message);
+    }
   }
   async function sbUpsertReview(review) {
     if (!isSupabaseReady) return;
-    await supabase.from('weekly_reviews').upsert(review);
+    const { error } = await supabase.from('weekly_reviews').upsert(review);
+    if (error) {
+      console.error('Lỗi lưu đánh giá:', error);
+      alert('Lỗi lưu dữ liệu lên Database: ' + error.message);
+    }
   }
   async function sbDeleteTask(id) {
     if (!isSupabaseReady) return;
-    await supabase.from('tasks').delete().eq('id', id);
+    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    if (error) {
+      console.error('Lỗi xóa công việc:', error);
+      alert('Lỗi xóa dữ liệu trên Database: ' + error.message);
+    }
   }
   async function sbDeleteReview(id) {
     if (!isSupabaseReady) return;
-    await supabase.from('weekly_reviews').delete().eq('id', id);
+    const { error } = await supabase.from('weekly_reviews').delete().eq('id', id);
+    if (error) {
+      console.error('Lỗi xóa đánh giá:', error);
+      alert('Lỗi xóa dữ liệu trên Database: ' + error.message);
+    }
   }
 
   // ── Task operations ────────────────────────────────────────────────────────

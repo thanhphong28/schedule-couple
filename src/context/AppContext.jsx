@@ -96,6 +96,53 @@ export function AppProvider({ children }) {
     };
   }, []);
 
+  // ── Browser Notifications ──────────────────────────────────────────────────
+  const tasksRef = useRef(tasks);
+  useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+
+  const toggleTaskRef = useRef(null);
+
+  useEffect(() => {
+    if (!('Notification' in window)) return;
+    
+    const interval = setInterval(() => {
+      if (Notification.permission !== 'granted') return;
+      
+      const now = new Date();
+      const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
+      const currentHour = now.getHours();
+      const currentMin = now.getMinutes();
+      const currentTimeStr = `${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')}`;
+
+      tasksRef.current.forEach(t => {
+        if (t.day === currentDay && !t.is_completed && t.time) {
+          const startTime = t.time.split('-')[0].trim();
+          
+          if (startTime === currentTimeStr) {
+            const notifiedKey = `notified_${t.id}_${now.toDateString()}`;
+            if (!sessionStorage.getItem(notifiedKey)) {
+              sessionStorage.setItem(notifiedKey, 'true');
+              
+              const notif = new Notification("⏰ Đến giờ rồi: " + t.title, {
+                body: "Nhấp vào đây để đánh dấu hoàn thành luôn nhé! 💖",
+                icon: '/favicon.ico',
+                requireInteraction: true
+              });
+              
+              notif.onclick = () => {
+                window.focus();
+                if (toggleTaskRef.current) toggleTaskRef.current(t.id);
+                notif.close();
+              };
+            }
+          }
+        }
+      });
+    }, 15000); // Check every 15s
+
+    return () => clearInterval(interval);
+  }, []);
+
   // ── Upsert helper ─────────────────────────────────────────────────────────
   async function sbUpsertTask(task) {
     if (!isSupabaseReady) return;
@@ -127,6 +174,7 @@ export function AppProvider({ children }) {
       return next;
     });
   }
+  toggleTaskRef.current = toggleTask;
 
   function updateTask(id, updates) {
     setTasks(prev => {

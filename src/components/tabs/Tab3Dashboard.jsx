@@ -161,21 +161,21 @@ export default function Tab3Dashboard() {
   };
 
   return (
-    <div className="px-3 sm:px-5 py-4 space-y-5 animate-fadeInUp">
+    <div className="px-3 sm:px-5 py-4 space-y-6 animate-fadeInUp">
       {/* KPI Cards */}
       <section>
-        <h2 className="text-base font-800 text-gray-700 mb-3">📊 Thống kê dài hạn</h2>
+        <h2 className="text-lg sm:text-xl font-black text-white drop-shadow-sm uppercase tracking-wide mb-4">📊 Thống kê dài hạn</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { icon: '🎯', label: 'Tỷ lệ TB', value: `${avgCompletion}%`, color: '#E27387', bg: '#fceef1' },
-            { icon: '🏃', label: 'Tuần đạt TT', value: `${sportWeeks} tuần`, color: '#74B9FF', bg: '#eff8ff' },
-            { icon: '⭐', label: 'Điểm gắn kết', value: avgRating, color: '#FDCB6E', bg: '#fffbeb' },
-            { icon: '🏆', label: 'Kỷ lục cao nhất', value: `${bestCompletion}%`, color: '#00B894', bg: '#e8faf4' },
+            { icon: '🎯', label: 'Tỷ lệ TB', value: `${avgCompletion}%`, color: '#fbcfe8' },
+            { icon: '🏃', label: 'Tuần đạt TT', value: `${sportWeeks} tuần`, color: '#bae6fd' },
+            { icon: '⭐', label: 'Điểm gắn kết', value: avgRating, color: '#fef08a' },
+            { icon: '🏆', label: 'Kỷ lục cao nhất', value: `${bestCompletion}%`, color: '#bbf7d0' },
           ].map((k, i) => (
-            <div key={i} className="scorecard text-center shadow-sm border" style={{ background: k.bg, borderColor: k.bg }}>
-              <div className="text-2xl mb-1">{k.icon}</div>
-              <div className="text-xl font-800" style={{ color: k.color }}>{k.value}</div>
-              <div className="text-xs text-gray-400 font-600 leading-tight">{k.label}</div>
+            <div key={i} className="scorecard liquid-glass text-center p-4 rounded-3xl">
+              <div className="text-3xl mb-2 drop-shadow-sm">{k.icon}</div>
+              <div className="text-xl sm:text-2xl font-black drop-shadow-sm" style={{ color: k.color }}>{k.value}</div>
+              <div className="text-[10px] sm:text-xs text-white/80 font-bold uppercase tracking-wide mt-1">{k.label}</div>
             </div>
           ))}
         </div>
@@ -183,29 +183,29 @@ export default function Tab3Dashboard() {
 
       {/* Chart */}
       <section>
-        <div className="bg-white rounded-2xl border border-pink-50 shadow-sm p-4">
-          <h3 className="text-sm font-800 text-gray-700 mb-4">📈 Biểu đồ tiến độ theo tuần</h3>
+        <div className="liquid-glass rounded-3xl p-5 sm:p-6 border border-white/30 shadow-[0_8px_32px_rgba(0,0,0,0.05)]">
+          <h3 className="text-sm font-black text-white drop-shadow-sm uppercase tracking-wide mb-5">📈 Biểu đồ tiến độ</h3>
           {chartData.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
-              <div className="text-4xl mb-2">📊</div>
-              <p className="font-600">Chưa có dữ liệu tuần nào</p>
+            <div className="text-center py-10 liquid-glass rounded-2xl border-white/20">
+              <div className="text-4xl mb-3 drop-shadow-sm">📊</div>
+              <p className="font-bold text-white/80 text-sm tracking-wide">Chưa có dữ liệu tuần nào</p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={240}>
               <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#fce4eb" />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Nunito', fill: '#9ca3af' }} />
-                <YAxis tick={{ fontSize: 11, fontFamily: 'Nunito', fill: '#9ca3af' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.2)" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Outfit', fill: 'rgba(255,255,255,0.8)', fontWeight: 600 }} stroke="rgba(255,255,255,0.2)" />
+                <YAxis tick={{ fontSize: 11, fontFamily: 'Outfit', fill: 'rgba(255,255,255,0.8)', fontWeight: 600 }} stroke="rgba(255,255,255,0.2)" />
                 <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12, fontFamily: 'Nunito' }} />
-                <Bar dataKey="Hoàn thành (%)" fill="#E27387" radius={[6, 6, 0, 0]} opacity={0.85} />
+                <Legend wrapperStyle={{ fontSize: 12, fontFamily: 'Outfit', color: 'white', fontWeight: 600 }} />
+                <Bar dataKey="Hoàn thành (%)" fill="rgba(255,255,255,0.5)" radius={[8, 8, 0, 0]} opacity={0.9} />
                 <Line
                   type="monotone"
                   dataKey="Thể thao (buổi)"
-                  stroke="#74B9FF"
-                  strokeWidth={2.5}
-                  dot={{ fill: '#74B9FF', r: 4 }}
-                  activeDot={{ r: 6 }}
+                  stroke="#f4a5b5"
+                  strokeWidth={3}
+                  dot={{ fill: '#f4a5b5', r: 5, strokeWidth: 2, stroke: '#fff' }}
+                  activeDot={{ r: 7, fill: '#E27387' }}
                 />
               </ComposedChart>
             </ResponsiveContainer>
@@ -215,10 +215,10 @@ export default function Tab3Dashboard() {
 
       {/* Review Journal */}
       <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-800 text-gray-700">📓 Nhật ký đánh giá các tuần</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg sm:text-xl font-black text-white drop-shadow-sm uppercase tracking-wide">📓 Nhật ký các tuần</h2>
           <button
-            className="btn-primary text-xs flex items-center gap-1.5 py-2 px-3"
+            className="btn-primary text-xs flex items-center gap-1.5 py-2 px-4 shadow-xl shadow-pink-500/20"
             onClick={() => { setEditReview(null); setShowModal(true); }}
           >
             <Plus size={14} /> Thêm tuần
@@ -226,47 +226,47 @@ export default function Tab3Dashboard() {
         </div>
 
         {reviews.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-pink-50 shadow-sm p-8 text-center">
-            <div className="text-5xl mb-3">📓</div>
-            <p className="text-gray-400 font-600">Chưa có nhật ký tuần nào</p>
-            <p className="text-xs text-gray-300 mt-1">Hãy thêm tổng kết tuần đầu tiên!</p>
+          <div className="liquid-glass rounded-3xl p-8 text-center border-white/20">
+            <div className="text-5xl mb-4 drop-shadow-sm">📓</div>
+            <p className="text-white/90 font-bold tracking-wide">Chưa có nhật ký tuần nào</p>
+            <p className="text-xs text-white/60 mt-1 font-medium">Hãy thêm tổng kết tuần đầu tiên!</p>
             <button
-              className="btn-primary mt-4 text-sm"
+              className="btn-secondary mt-5 text-xs py-2 px-4 shadow-sm border-white/60 bg-white/20 text-white hover:bg-white/30 backdrop-blur-md"
               onClick={() => { setEditReview(null); setShowModal(true); }}
             >
               + Ghi nhật ký đầu tiên
             </button>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {reviews.map(review => (
-              <div key={review.id} className="bg-white rounded-2xl border border-pink-50 shadow-sm p-4 animate-slide-in">
-                <div className="flex items-start justify-between gap-2 mb-3">
+              <div key={review.id} className="liquid-glass rounded-3xl p-5 border border-white/30 animate-slide-in hover:bg-white/30 transition-colors">
+                <div className="flex items-start justify-between gap-3 mb-4">
                   <div>
-                    <h4 className="font-800 text-gray-700 text-sm">{review.week_label}</h4>
-                    <div className="flex items-center gap-3 mt-1 flex-wrap">
-                      <span className="text-xs font-700" style={{ color: '#E27387' }}>
+                    <h4 className="font-black text-white text-base drop-shadow-sm uppercase tracking-wide">{review.week_label}</h4>
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
+                      <span className="text-xs font-black text-pink-200 tracking-wide bg-black/10 px-2 py-1 rounded-full border border-white/10 shadow-inner">
                         📊 {review.completion_rate}% hoàn thành
                       </span>
-                      <span className="text-xs font-700 text-blue-500">
+                      <span className="text-xs font-black text-sky-200 tracking-wide bg-black/10 px-2 py-1 rounded-full border border-white/10 shadow-inner">
                         🏃 {review.sport_sessions} buổi TT
                       </span>
-                      <div className="flex gap-0.5">
+                      <div className="flex gap-0.5 bg-black/10 px-2 py-1 rounded-full border border-white/10 shadow-inner">
                         {[1,2,3,4,5].map(s => (
-                          <Star key={s} size={13} fill={(review.rating || 0) >= s ? '#FDCB6E' : 'none'} color={(review.rating || 0) >= s ? '#FDCB6E' : '#d1d5db'} />
+                          <Star key={s} size={13} fill={(review.rating || 0) >= s ? '#FDCB6E' : 'none'} color={(review.rating || 0) >= s ? '#FDCB6E' : 'rgba(255,255,255,0.3)'} />
                         ))}
                       </div>
                     </div>
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
                     <button
-                      className="p-1.5 rounded-lg hover:bg-pink-50 text-gray-400 hover:text-pink-500 transition-colors"
+                      className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all backdrop-blur-md border border-white/20"
                       onClick={() => { setEditReview(review); setShowModal(true); }}
                     >
                       ✏️
                     </button>
                     <button
-                      className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-400 transition-colors"
+                      className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 hover:text-red-200 transition-all backdrop-blur-md border border-red-500/20"
                       onClick={() => deleteReview(review.id)}
                     >
                       <Trash2 size={14} />
@@ -275,23 +275,23 @@ export default function Tab3Dashboard() {
                 </div>
 
                 {(review.good_things || review.improve_things || review.next_plan) && (
-                  <div className="space-y-2 text-xs">
+                  <div className="space-y-2.5 text-xs">
                     {review.good_things && (
-                      <div className="flex gap-2 p-2 rounded-xl" style={{ background: '#f0fdf4' }}>
-                        <span className="font-700 text-green-600">✅</span>
-                        <p className="text-green-700 leading-relaxed">{review.good_things}</p>
+                      <div className="flex gap-2.5 p-3 rounded-2xl bg-white/20 border border-white/30 backdrop-blur-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
+                        <span className="font-bold text-emerald-300 drop-shadow-sm text-sm">✅</span>
+                        <p className="text-white/90 font-medium leading-relaxed">{review.good_things}</p>
                       </div>
                     )}
                     {review.improve_things && (
-                      <div className="flex gap-2 p-2 rounded-xl" style={{ background: '#fff7ed' }}>
-                        <span className="font-700 text-orange-500">⚡</span>
-                        <p className="text-orange-700 leading-relaxed">{review.improve_things}</p>
+                      <div className="flex gap-2.5 p-3 rounded-2xl bg-white/20 border border-white/30 backdrop-blur-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
+                        <span className="font-bold text-amber-300 drop-shadow-sm text-sm">⚡</span>
+                        <p className="text-white/90 font-medium leading-relaxed">{review.improve_things}</p>
                       </div>
                     )}
                     {review.next_plan && (
-                      <div className="flex gap-2 p-2 rounded-xl" style={{ background: '#eff8ff' }}>
-                        <span className="font-700 text-blue-500">🎯</span>
-                        <p className="text-blue-700 leading-relaxed">{review.next_plan}</p>
+                      <div className="flex gap-2.5 p-3 rounded-2xl bg-white/20 border border-white/30 backdrop-blur-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
+                        <span className="font-bold text-sky-300 drop-shadow-sm text-sm">🎯</span>
+                        <p className="text-white/90 font-medium leading-relaxed">{review.next_plan}</p>
                       </div>
                     )}
                   </div>

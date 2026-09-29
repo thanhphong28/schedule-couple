@@ -67,6 +67,6 @@ dist-ssr
 .vibe
 .windsurf
 .zencoder
-skills
+/skills/
 skills-lock.json
-data
+/data/

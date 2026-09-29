@@ -1,7 +1,10 @@
+// components/shared/WelcomePopup.jsx
 import { useEffect, useState } from 'react';
-import { useApp } from '../../context/AppContext';
+import { createPortal } from 'react-dom';
+import { useApp } from '../../context/AppContext.jsx';
 import { X, Heart, Sparkles, CheckCircle2 } from 'lucide-react';
 import { COMPLIMENTS, LOVE_REMINDERS } from '../../data/quotes.js';
+import { getDayIndex } from '../../lib/utils.js';
 
 export function WelcomePopup() {
   const [isOpen, setIsOpen] = useState(false);
@@ -11,9 +14,7 @@ export function WelcomePopup() {
   useEffect(() => {
     // Only show once per session
     if (!sessionStorage.getItem('sc_welcome_shown')) {
-      const today = new Date().getDay();
-      const dayIdx = today === 0 ? 6 : today - 1; // Map Sun=0 to 6, Mon=1 to 0
-      
+      const dayIdx = getDayIndex();
       const uncompletedTasks = tasks.filter(t => t.day === dayIdx && !t.is_completed).length;
       
       setContent({
@@ -30,7 +31,7 @@ export function WelcomePopup() {
     sessionStorage.setItem('sc_welcome_shown', 'true');
     setIsOpen(false);
     
-    // Request notification permission for the task reminders
+    // Request notification permission for task reminders
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
@@ -38,55 +39,76 @@ export function WelcomePopup() {
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-sm liquid-glass-heavy rounded-[32px] p-6 border border-white/20 shadow-2xl animate-scaleIn text-center overflow-hidden" onClick={e => e.stopPropagation()}>
-        {/* Decorative background glow */}
-        <div className="absolute -top-20 -right-20 w-40 h-40 bg-pink-500/20 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
-        
+  const contentPopup = (
+    <div className="modal-overlay" onClick={handleStart}>
+      <div 
+        className="w-full max-w-sm glass-panel-elevated rounded-t-[32px] sm:rounded-[32px] p-6 border border-white/20 shadow-2xl animate-slide-up text-center overflow-hidden relative mx-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Subtle romantic ambient lighting */}
+        <div className="absolute -top-16 -right-16 w-36 h-36 bg-rose-500/25 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-16 -left-16 w-36 h-36 bg-pink-500/25 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Drag handle for mobile */}
+        <div className="pb-2 flex justify-center sm:hidden">
+          <div className="w-12 h-1.5 bg-zinc-600 rounded-full" />
+        </div>
+
+        {/* Close Button */}
         <button 
+          type="button"
           onClick={handleStart}
-          className="absolute top-4 right-4 p-2 text-white/60 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-colors z-10"
+          className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-colors active:scale-90 z-10"
+          aria-label="Đóng"
         >
           <X size={18} strokeWidth={2.5} />
         </button>
 
-        <div className="relative z-10 space-y-5 pt-4">
-          <div className="w-16 h-16 mx-auto mb-2 bg-gradient-to-tr from-pink-400 to-purple-400 rounded-full flex items-center justify-center shadow-lg shadow-pink-500/30">
-            <Sparkles className="text-white" size={32} />
+        <div className="relative z-10 space-y-4 pt-2">
+          {/* Avatar Capsule */}
+          <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center shadow-lg shadow-rose-500/30">
+            <Sparkles className="text-white" size={28} />
           </div>
 
-          <h2 className="text-2xl font-black text-white mb-2 tracking-tight">Chào ngày mới! ☀️</h2>
+          <div>
+            <h2 className="text-xl font-black text-white tracking-tight">Chào ngày mới hai đứa! ☀️</h2>
+            <p className="text-xs text-rose-300 font-bold mt-0.5">Phong & Thi 💕</p>
+          </div>
           
-          <div className="space-y-3 text-sm font-600 text-white/90">
-            <div className="bg-black/20 p-4 rounded-2xl border border-white/10 flex flex-col items-center gap-2">
-              <p className="text-pink-200 italic font-bold">"{content.compliment}"</p>
+          <div className="space-y-2.5 text-xs text-zinc-200">
+            {/* Compliment */}
+            <div className="bg-white/5 p-3.5 rounded-2xl border border-white/10">
+              <p className="text-rose-200 italic font-bold">"{content.compliment}"</p>
             </div>
 
-            <div className="bg-white/5 p-4 rounded-2xl border border-white/10 flex items-start gap-3 text-left">
-              <Heart className="text-pink-400 mt-0.5 shrink-0 animate-pulse-pink" size={16} fill="currentColor" />
+            {/* Love Reminder */}
+            <div className="bg-white/5 p-3.5 rounded-2xl border border-white/10 flex items-start gap-2.5 text-left">
+              <Heart className="text-rose-400 mt-0.5 shrink-0 animate-heartbeat" size={15} fill="currentColor" />
               <p className="leading-relaxed">{content.love}</p>
             </div>
 
-            <div className="bg-white/5 p-4 rounded-2xl border border-white/10 flex items-start gap-3 text-left">
-              <CheckCircle2 className="text-emerald-400 mt-0.5 shrink-0" size={16} />
-              <p className="leading-relaxed text-white/80">
+            {/* Tasks Summary */}
+            <div className="bg-white/5 p-3 rounded-2xl border border-white/10 flex items-center gap-2.5 text-left">
+              <CheckCircle2 className="text-emerald-400 shrink-0" size={16} />
+              <p className="leading-tight text-zinc-300">
                 {content.tasksLeft > 0 
-                  ? <>Hôm nay bạn còn <b>{content.tasksLeft}</b> việc chưa làm. Cố gắng hoàn thành nhé! 💪</> 
-                  : <>Tuyệt vời! Hôm nay bạn không còn việc nào tồn đọng! 🎉</>}
+                  ? <>Hôm nay có <b>{content.tasksLeft}</b> việc cần làm. Cùng cố gắng nhé! 💪</> 
+                  : <>Tuyệt vời! Hôm nay đã hoàn thành hết việc! 🎉</>}
               </p>
             </div>
           </div>
 
           <button 
+            type="button"
             onClick={handleStart} 
-            className="w-full mt-2 py-4 liquid-glass border border-white/30 text-white font-bold rounded-2xl hover:bg-white/10 transition-all active:scale-[0.98] uppercase tracking-widest text-xs shadow-lg"
+            className="w-full btn-primary py-3.5 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-rose-500/30"
           >
-            Bắt đầu thôi! 🚀
+            Bắt đầu ngày mới ✨
           </button>
         </div>
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(contentPopup, document.body) : contentPopup;
 }

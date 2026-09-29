@@ -1,33 +1,40 @@
-// components/tabs/Tab2WeekPlan.jsx
-import { Filter, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Check, Filter, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { CATEGORIES, DAYS, DAYS_EN, PERSONS, PRIORITY } from '../../data/initialTasks.js';
-import { CategoryBadge, PersonBadge, PriorityBadge } from '../shared/Badge.jsx';
+import { CATEGORIES, DAYS, DAYS_EN, PERSONS } from '../../data/initialTasks.js';
 import { TaskCard, TaskModal } from '../shared/TaskCard.jsx';
 
 function ResetModal({ onClose, onConfirm }) {
-  return (
+  const content = (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 animate-fadeInUp" onClick={e => e.stopPropagation()}>
-        <div className="text-center mb-5">
-          <div className="text-5xl mb-3">🔄</div>
-          <h3 className="text-lg font-800 text-gray-700 mb-2">Bắt đầu tuần mới?</h3>
-          <p className="text-sm text-gray-400 leading-relaxed">
-            Tiến độ tuần hiện tại sẽ được <strong>lưu vào Dashboard</strong> trước khi reset. Bạn chắc chắn muốn tiếp tục?
-          </p>
+      <div 
+        className="bottom-sheet p-6 text-center space-y-4 max-w-sm mx-auto" 
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="pt-1 pb-2 flex justify-center">
+          <div className="w-12 h-1.5 bg-zinc-600/80 rounded-full" />
         </div>
-        <div className="flex gap-3">
-          <button className="btn-secondary flex-1" onClick={onClose}>Hủy</button>
-          <button className="btn-primary flex-1" onClick={onConfirm}>✨ Bắt đầu!</button>
+        <div className="w-14 h-14 mx-auto rounded-full bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-2xl shadow-inner">
+          🔄
+        </div>
+        <h3 className="text-lg font-extrabold text-white">Bắt đầu tuần mới?</h3>
+        <p className="text-xs text-zinc-300 leading-relaxed px-2">
+          Tiến độ tuần hiện tại sẽ được <strong>lưu tự động vào Dashboard</strong> trước khi reset lại danh sách việc. Bạn chắc chắn muốn tiếp tục?
+        </p>
+        <div className="flex gap-2.5 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
+          <button type="button" className="btn-secondary flex-1 py-3" onClick={onClose}>Hủy</button>
+          <button type="button" className="btn-primary flex-1 py-3" onClick={onConfirm}>✨ Bắt đầu!</button>
         </div>
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 }
 
 export default function Tab2WeekPlan() {
-  const { tasks, deleteTask, resetWeek, toggleTask } = useApp();
+  const { tasks, deleteTask, resetWeek, totalTasks, completedTasks, bothTasks, progressPct } = useApp();
 
   // Filters
   const [filterPerson, setFilterPerson] = useState('ALL');
@@ -68,183 +75,214 @@ export default function Tab2WeekPlan() {
 
   const hasFilters = filterPerson !== 'ALL' || filterCategory !== 'ALL' || filterStatus !== 'ALL' || search;
 
-  const { totalTasks, completedTasks, bothTasks, progressPct } = useApp();
   const progressColor =
-    progressPct >= 80 ? '#00B894' :
-    progressPct >= 50 ? '#E27387' :
-    '#FDCB6E';
+    progressPct >= 80 ? '#10B981' :
+    progressPct >= 50 ? '#F43F5E' :
+    '#F59E0B';
 
   return (
-    <div className="px-3 sm:px-5 py-4 space-y-6 animate-fadeInUp">
+    <div className="px-3 sm:px-4 py-2 space-y-4 animate-fadeInUp">
       
-      {/* Scorecards & Progress Bar */}
-      <div className="max-w-4xl mx-auto mb-6">
-        <div className="grid grid-cols-4 gap-2 sm:gap-4 mb-4">
-          <div className="scorecard liquid-glass text-center p-3 sm:p-5 rounded-[24px] sm:rounded-[28px]">
-            <div className="text-2xl sm:text-3xl font-black text-pink-300 drop-shadow-md">{totalTasks}</div>
-            <div className="text-[10px] sm:text-[11px] text-white/70 font-bold uppercase tracking-wider mt-1.5">Tổng việc</div>
+      {/* ─── METRIC CARDS ─── */}
+      <section className="glass-panel p-3.5 rounded-[24px] shadow-lg">
+        <div className="grid grid-cols-4 gap-2 mb-3">
+          <div className="text-center p-2 rounded-2xl bg-white/5 border border-white/5">
+            <div className="text-xl sm:text-2xl font-black text-rose-300">{totalTasks}</div>
+            <div className="text-[10px] text-zinc-400 font-bold uppercase mt-0.5">Tổng việc</div>
           </div>
-          <div className="scorecard liquid-glass text-center p-3 sm:p-5 rounded-[24px] sm:rounded-[28px]">
-            <div className="text-2xl sm:text-3xl font-black text-emerald-300 drop-shadow-md">{completedTasks}</div>
-            <div className="text-[10px] sm:text-[11px] text-white/70 font-bold uppercase tracking-wider mt-1.5">Đã xong</div>
+          <div className="text-center p-2 rounded-2xl bg-white/5 border border-white/5">
+            <div className="text-xl sm:text-2xl font-black text-emerald-400">{completedTasks}</div>
+            <div className="text-[10px] text-zinc-400 font-bold uppercase mt-0.5">Đã xong</div>
           </div>
-          <div className="scorecard liquid-glass text-center p-3 sm:p-5 rounded-[24px] sm:rounded-[28px]">
-            <div className="text-2xl sm:text-3xl font-black text-violet-300 drop-shadow-md">{bothTasks}</div>
-            <div className="text-[10px] sm:text-[11px] text-white/70 font-bold uppercase tracking-wider mt-1.5">Cùng nhau</div>
+          <div className="text-center p-2 rounded-2xl bg-white/5 border border-white/5">
+            <div className="text-xl sm:text-2xl font-black text-violet-300">{bothTasks}</div>
+            <div className="text-[10px] text-zinc-400 font-bold uppercase mt-0.5">Cùng nhau</div>
           </div>
-          <div className="scorecard liquid-glass text-center p-3 sm:p-5 rounded-[24px] sm:rounded-[28px]">
-            <div className="text-2xl sm:text-3xl font-black drop-shadow-md" style={{ color: progressColor }}>{progressPct}%</div>
-            <div className="text-[10px] sm:text-[11px] text-white/70 font-bold uppercase tracking-wider mt-1.5">Tiến độ</div>
+          <div className="text-center p-2 rounded-2xl bg-white/5 border border-white/5">
+            <div className="text-xl sm:text-2xl font-black" style={{ color: progressColor }}>{progressPct}%</div>
+            <div className="text-[10px] text-zinc-400 font-bold uppercase mt-0.5">Tiến độ</div>
           </div>
         </div>
 
-        <div className="px-4 py-3 liquid-glass rounded-[20px]">
-          <div className="flex justify-between text-[11px] text-white/90 font-bold mb-2 uppercase tracking-wider">
-            <span>Tiến độ tuần</span>
-            <span style={{ color: progressColor }}>{completedTasks}/{totalTasks}</span>
+        {/* Shimmering Progress Bar */}
+        <div className="space-y-1">
+          <div className="flex justify-between text-[11px] text-zinc-300 font-bold px-1">
+            <span>Tiến độ toàn tuần</span>
+            <span style={{ color: progressColor }}>{completedTasks}/{totalTasks} việc</span>
           </div>
-          <div className="progress-bar bg-black/20 h-2.5 rounded-full overflow-hidden border border-white/10 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
-            <div className="progress-fill h-full rounded-full transition-all duration-1000 cubic-bezier(0.2,0.8,0.2,1)" style={{ width: `${progressPct}%`, background: `linear-gradient(90deg, ${progressColor}88, ${progressColor})`, boxShadow: `0 0 12px ${progressColor}88` }} />
+          <div className="h-2 rounded-full bg-zinc-950/80 overflow-hidden border border-white/10 p-0.5">
+            <div 
+              className="h-full rounded-full transition-all duration-700 ease-out" 
+              style={{ 
+                width: `${progressPct}%`, 
+                background: `linear-gradient(90deg, ${progressColor}aa, ${progressColor})`,
+                boxShadow: `0 0 10px ${progressColor}88`
+              }} 
+            />
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Title + Add + Reset */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      {/* ─── SECTION TITLE & ACTIONS ─── */}
+      <div className="flex items-center justify-between gap-2 px-1">
         <div>
-          <h2 className="text-lg sm:text-xl font-black text-white drop-shadow-sm uppercase tracking-wide">📋 Kế hoạch cả tuần</h2>
-          <p className="text-xs text-white/80 font-bold mt-1 tracking-wide">{filtered.length} / {tasks.length} công việc đang hiển thị</p>
+          <h2 className="text-base font-extrabold text-white">📋 Kế hoạch cả tuần</h2>
+          <p className="text-xs text-zinc-400">{filtered.length} / {tasks.length} công việc</p>
         </div>
-        <div className="flex gap-2.5">
+        <div className="flex items-center gap-2">
           <button
-            className="btn-secondary text-xs flex items-center gap-1.5 py-2 px-4 shadow-sm border-white/60 bg-white/20 text-white hover:bg-white/30 backdrop-blur-md"
+            type="button"
+            className="btn-secondary text-xs py-2 px-3 rounded-xl flex items-center gap-1.5"
             onClick={() => setShowReset(true)}
           >
             <RefreshCw size={13} />
-            <span className="hidden sm:inline">Tuần mới</span>
+            <span>Reset tuần</span>
           </button>
           <button
-            className="btn-primary text-xs flex items-center gap-1.5 py-2 px-4 shadow-xl shadow-pink-500/20"
+            type="button"
+            className="btn-primary text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 shadow-md shadow-rose-500/25"
             onClick={() => { setEditTask(null); setShowModal(true); }}
           >
-            <Plus size={14} /> Thêm việc
+            <Plus size={14} />
+            <span>Thêm việc</span>
           </button>
         </div>
       </div>
 
-      {/* Search & Filters */}
-      <div className="liquid-glass rounded-2xl p-4 sm:p-5 space-y-4">
-        {/* Search */}
+      {/* ─── SEARCH & FILTER SECTION ─── */}
+      <section className="glass-panel p-3 rounded-[20px] space-y-2.5">
+        {/* Search Input */}
         <div className="relative">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70" />
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input
-            className="input-romantic pl-11 bg-white/10 border-white/30 text-white placeholder-white/50 backdrop-blur-sm focus:border-white/60 focus:bg-white/20 shadow-[inset_0_2px_4px_rgba(0,0,0,0.05)]"
+            className="input-romantic pl-10 pr-9 py-2 text-xs"
             placeholder="Tìm kiếm công việc..."
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
           {search && (
-            <button onClick={() => setSearch('')} className="absolute right-4 top-1/2 -translate-y-1/2 hover:scale-110 transition-transform">
-              <X size={16} className="text-white/80 hover:text-white" />
+            <button 
+              type="button"
+              onClick={() => setSearch('')} 
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1"
+            >
+              <X size={14} />
             </button>
           )}
         </div>
 
-        {/* Filter chips */}
-        <div className="flex flex-wrap gap-2.5">
-          {/* Person filter */}
-          <div className="flex gap-1.5 flex-wrap">
-            {['ALL', ...Object.keys(PERSONS)].map(k => (
-              <button
-                key={k}
-                className={`day-chip text-xs py-1.5 px-3.5 border ${filterPerson === k ? 'bg-white/30 text-white border-white/60 shadow-sm' : 'bg-white/5 text-white/70 border-white/20 hover:bg-white/10 hover:text-white hover:border-white/40'}`}
-                onClick={() => setFilterPerson(k)}
-              >
-                {k === 'ALL' ? '👥 Tất cả' : `${PERSONS[k].emoji} ${PERSONS[k].label}`}
-              </button>
-            ))}
-          </div>
+        {/* Scrollable Filter Chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1">
+          {/* Status filters */}
+          {[
+            ['ALL', 'Tất cả'],
+            ['TODO', 'Chưa xong'],
+            ['DONE', 'Đã xong']
+          ].map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFilterStatus(k)}
+              className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border ${
+                filterStatus === k
+                  ? 'bg-rose-500 text-white border-rose-400 shadow-sm'
+                  : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
 
-          {/* Category filter */}
-          <div className="flex gap-1.5 flex-wrap">
-            {['ALL', ...Object.keys(CATEGORIES)].map(k => (
-              <button
-                key={k}
-                className={`day-chip text-xs py-1.5 px-3.5 border ${filterCategory === k ? 'bg-white/30 text-white border-white/60 shadow-sm' : 'bg-white/5 text-white/70 border-white/20 hover:bg-white/10 hover:text-white hover:border-white/40'}`}
-                onClick={() => setFilterCategory(k)}
-              >
-                {k === 'ALL' ? '🗂 Tất cả' : `${CATEGORIES[k].icon} ${CATEGORIES[k].label}`}
-              </button>
-            ))}
-          </div>
+          {/* Separator */}
+          <span className="text-zinc-600 text-xs">|</span>
 
-          {/* Status filter */}
-          <div className="flex gap-1.5">
-            {[['ALL', '🌀 Tất cả'], ['TODO', '⏳ Chưa xong'], ['DONE', '✅ Hoàn thành']].map(([k, l]) => (
-              <button
-                key={k}
-                className={`day-chip text-xs py-1.5 px-3.5 border ${filterStatus === k ? 'bg-white/30 text-white border-white/60 shadow-sm' : 'bg-white/5 text-white/70 border-white/20 hover:bg-white/10 hover:text-white hover:border-white/40'}`}
-                onClick={() => setFilterStatus(k)}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
+          {/* Person filters */}
+          {['ALL', ...Object.keys(PERSONS)].map(k => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFilterPerson(k)}
+              className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border ${
+                filterPerson === k
+                  ? 'bg-white/25 text-white border-white/40 shadow-sm'
+                  : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              {k === 'ALL' ? '👥 Tất cả người' : `${PERSONS[k].emoji} ${PERSONS[k].label}`}
+            </button>
+          ))}
+
+          {/* Separator */}
+          <span className="text-zinc-600 text-xs">|</span>
+
+          {/* Category filters */}
+          {['ALL', ...Object.keys(CATEGORIES)].map(k => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFilterCategory(k)}
+              className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border ${
+                filterCategory === k
+                  ? 'bg-white/25 text-white border-white/40 shadow-sm'
+                  : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              {k === 'ALL' ? '🗂 Tất cả loại' : `${CATEGORIES[k].icon} ${CATEGORIES[k].label}`}
+            </button>
+          ))}
 
           {hasFilters && (
             <button
-              className="text-xs text-pink-200 font-bold underline hover:text-white transition-colors py-1.5 px-2"
+              type="button"
               onClick={() => { setFilterPerson('ALL'); setFilterCategory('ALL'); setFilterStatus('ALL'); setSearch(''); }}
+              className="px-2.5 py-1 text-[11px] font-bold text-rose-300 underline whitespace-nowrap"
             >
               Xóa lọc
             </button>
           )}
         </div>
-      </div>
+      </section>
 
-      {/* Task List grouped by day */}
+      {/* ─── GROUPED DAYS LIST ─── */}
       {Object.keys(grouped).length === 0 ? (
-        <div className="text-center py-16 liquid-glass rounded-3xl mx-2">
-          <div className="text-5xl mb-4 drop-shadow-md">🔍</div>
-          <p className="text-white/90 font-bold text-sm tracking-wide">Không tìm thấy công việc nào!</p>
+        <div className="glass-panel rounded-3xl p-10 text-center border-white/10">
+          <div className="text-4xl mb-3">🔍</div>
+          <p className="text-sm font-bold text-white">Không tìm thấy công việc nào phù hợp</p>
+          <p className="text-xs text-zinc-400 mt-1">Hãy thử xóa bộ lọc hoặc tìm kiếm từ khóa khác.</p>
         </div>
       ) : (
-        <div className="space-y-5">
-          {DAYS.map((day, di) => {
+        <div className="space-y-4">
+          {DAYS.map((dayName, di) => {
             if (!grouped[di]) return null;
             const dayTasks = grouped[di];
             const done = dayTasks.filter(t => t.is_completed).length;
+            const isAllDone = done === dayTasks.length && dayTasks.length > 0;
+
             return (
-              <div key={di} className="liquid-glass rounded-[24px] overflow-hidden">
-                {/* Day header */}
-                <div className="px-5 py-4 flex items-center justify-between border-b border-white/20 bg-white/10">
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-black text-white drop-shadow-sm uppercase tracking-wide">{DAYS_EN[di]} • {day}</span>
-                    <span className="badge liquid-glass border-white/40 text-pink-100 px-2 py-0.5 shadow-sm">
+              <div key={di} className="glass-panel rounded-[24px] overflow-hidden border border-white/10">
+                {/* Day Header */}
+                <div className="px-4 py-3 flex items-center justify-between bg-zinc-950/50 border-b border-white/10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-white">
+                      {DAYS_EN[di]} • {dayName}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-zinc-300 border border-white/10">
                       {dayTasks.length} việc
                     </span>
                   </div>
-                  <span className="text-xs font-black tracking-wide" style={{ color: done === dayTasks.length ? '#bbf7d0' : '#fbcfe8' }}>
-                    {done}/{dayTasks.length} ✅
+                  <span className={`text-xs font-bold ${isAllDone ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {done}/{dayTasks.length} hoàn thành {isAllDone ? '🎉' : ''}
                   </span>
                 </div>
 
-                {/* Tasks */}
-                <div className="p-4 sm:p-5 space-y-3">
+                {/* Day Tasks */}
+                <div className="p-3 space-y-2.5">
                   {dayTasks.map(task => (
                     <div key={task.id} className="relative group">
                       <TaskCard
                         task={task}
                         onEdit={(t) => { setEditTask(t); setShowModal(true); }}
                       />
-                      {/* Delete button */}
-                      <button
-                        className="absolute top-3 right-12 p-2 rounded-xl opacity-0 group-hover:opacity-100 bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all backdrop-blur-md border border-red-500/20"
-                        onClick={() => deleteTask(task.id)}
-                        aria-label="Xóa"
-                      >
-                        <Trash2 size={14} />
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -254,7 +292,7 @@ export default function Tab2WeekPlan() {
         </div>
       )}
 
-      {/* Modals */}
+      {/* ─── MODALS ─── */}
       {showModal && (
         <TaskModal
           task={editTask}

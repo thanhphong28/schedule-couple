@@ -1,4 +1,4 @@
-﻿# SCHEDULE BELONG TO THI & PHONG
+# SCHEDULE BELONG TO THI & PHONG
 
 > Thoi khoa bieu & Ke hoach tuan danh rieng cho cap doi
 
@@ -84,13 +84,24 @@ CREATE TABLE weekly_reviews (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE wallpapers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  is_custom BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
 ALTER PUBLICATION supabase_realtime ADD TABLE weekly_reviews;
+ALTER PUBLICATION supabase_realtime ADD TABLE wallpapers;
 
 CREATE POLICY "Allow all" ON tasks FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON weekly_reviews FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON wallpapers FOR ALL USING (true) WITH CHECK (true);
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE weekly_reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wallpapers ENABLE ROW LEVEL SECURITY;
 ```
 
 Buoc 3: Lay API Keys

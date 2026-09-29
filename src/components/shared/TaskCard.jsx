@@ -1,4 +1,4 @@
-// components/shared/TaskCard.jsx
+import { createPortal } from 'react-dom';
 import { Check, Clock, Pencil, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { CATEGORIES, DAYS, DAYS_SHORT_EN, PERSONS, PRIORITY } from '../../data/initialTasks.js';
@@ -9,69 +9,95 @@ export function TaskCard({ task, showDay = false, onEdit }) {
   const { toggleTask } = useApp();
   const [ripple, setRipple] = useState(false);
 
-  const handleToggle = () => {
+  const handleToggle = (e) => {
+    e.stopPropagation();
     setRipple(true);
     toggleTask(task.id);
-    setTimeout(() => setRipple(false), 400);
+    setTimeout(() => setRipple(false), 300);
   };
+
+  const categoryColor = CATEGORIES[task.category]?.color || '#F43F5E';
 
   return (
     <div
-      className={`task-card flex items-start gap-3.5 p-4 rounded-3xl shadow-[0_4px_16px_rgba(0,0,0,0.02)] border backdrop-blur-md mb-3 transition-all duration-300 ${
+      onClick={() => onEdit?.(task)}
+      className={`task-card relative flex items-start gap-3.5 p-3.5 sm:p-4 rounded-2xl cursor-pointer select-none transition-all duration-200 border ${
         task.is_completed
-          ? 'task-completed bg-white/10 border-white/20 opacity-70'
-          : 'bg-white/30 border-white/40 hover:bg-white/40 hover:shadow-[0_8px_24px_rgba(0,0,0,0.05)]'
+          ? 'task-completed bg-zinc-900/40 border-white/5 opacity-60'
+          : 'bg-zinc-900/70 border-white/10 hover:border-white/20 active:scale-[0.99] shadow-lg'
       }`}
-      style={task.is_completed ? {} : { borderLeftWidth: 6, borderLeftColor: CATEGORIES[task.category]?.color || '#E27387' }}
     >
-      {/* Checkbox */}
-      <button
-        onClick={handleToggle}
-        className={`custom-checkbox mt-1 border-2 ${task.is_completed ? 'checked border-transparent shadow-[0_0_10px_rgba(226,115,135,0.4)]' : 'border-white/60 bg-white/20'} ${ripple ? 'animate-pulse-pink' : ''}`}
-        aria-label={task.is_completed ? 'Bỏ hoàn thành' : 'Đánh dấu hoàn thành'}
-      >
-        {task.is_completed && <Check size={14} color="white" strokeWidth={4} />}
-      </button>
+      {/* Left Colored Accent Strip */}
+      <div 
+        className="absolute left-0 top-3 bottom-3 w-1 rounded-r-full transition-all"
+        style={{ 
+          backgroundColor: task.is_completed ? '#52525b' : categoryColor,
+          boxShadow: task.is_completed ? 'none' : `0 0 8px ${categoryColor}88`
+        }} 
+      />
 
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2.5 flex-wrap mb-2">
+      {/* Checkbox (Touch Target >= 44px hit area) */}
+      <div className="pl-1 pt-0.5 flex-shrink-0">
+        <button
+          type="button"
+          onClick={handleToggle}
+          className={`custom-checkbox ${task.is_completed ? 'checked' : ''} ${ripple ? 'scale-110' : ''}`}
+          aria-label={task.is_completed ? 'Bỏ hoàn thành' : 'Đánh dấu hoàn thành'}
+        >
+          {task.is_completed && <Check size={16} className="text-white" strokeWidth={3.5} />}
+        </button>
+      </div>
+
+      {/* Main Info */}
+      <div className="flex-1 min-w-0 pr-1">
+        {/* Meta info: Time & Day */}
+        <div className="flex items-center gap-2 flex-wrap mb-1">
           {task.time && (
-            <span className="flex items-center gap-1.5 text-xs font-black text-pink-500 drop-shadow-sm tracking-wide bg-white/40 px-2 py-0.5 rounded-md shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]">
-              <Clock size={12} strokeWidth={2.5} /> {task.time}
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-300 bg-rose-500/15 border border-rose-500/25 px-2 py-0.5 rounded-md">
+              <Clock size={11} strokeWidth={2.5} /> {task.time}
             </span>
           )}
           {showDay && (
-            <span className="text-xs text-white/90 font-bold uppercase tracking-wider">{DAYS[task.day]}</span>
+            <span className="text-[11px] font-bold text-zinc-300 uppercase tracking-wider">
+              {DAYS[task.day]}
+            </span>
           )}
         </div>
 
-        <p className={`text-[15px] font-black leading-snug mb-3 tracking-wide drop-shadow-sm ${task.is_completed ? 'line-through text-white/50' : 'text-white'}`}>
+        {/* Task Title */}
+        <h4 className={`text-sm font-bold leading-snug mb-2 transition-all ${
+          task.is_completed ? 'line-through text-zinc-400 font-medium' : 'text-white'
+        }`}>
           {task.title}
-        </p>
+        </h4>
 
-        <div className="flex flex-wrap gap-2">
+        {/* Badges */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <PersonBadge person={task.person} />
           <CategoryBadge category={task.category} />
           <PriorityBadge priority={task.priority} />
         </div>
       </div>
 
-      {/* Actions */}
+      {/* Edit Button */}
       {onEdit && (
         <button
-          onClick={() => onEdit(task)}
-          className="p-2 rounded-xl bg-white/20 hover:bg-white/40 text-white/80 hover:text-white shadow-sm border border-white/30 transition-all flex-shrink-0"
-          aria-label="Sửa"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit(task);
+          }}
+          className="p-2 -mr-1 -mt-0.5 text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-all active:scale-90 flex-shrink-0"
+          aria-label="Sửa công việc"
         >
-          <Pencil size={15} strokeWidth={2.5} />
+          <Pencil size={15} strokeWidth={2} />
         </button>
       )}
     </div>
   );
 }
 
-// Edit/Add Task Modal
+// Mobile Bottom Sheet for Edit/Add Task
 export function TaskModal({ task, onClose, onSave }) {
   const { tasks, addTask, updateTask, deleteTask } = useApp();
   const isEdit = !!task?.id;
@@ -133,57 +159,80 @@ export function TaskModal({ task, onClose, onSave }) {
     onClose();
   };
 
-  return (
+  const modalContent = (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 animate-fadeInUp"
+        className="bottom-sheet flex flex-col"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-800 text-gray-700">
-            {isEdit ? '✏️ Sửa công việc' : '✨ Thêm công việc mới'}
+        {/* Drag Indicator Handle */}
+        <div className="pt-3 pb-1 flex justify-center flex-shrink-0">
+          <div className="w-12 h-1.5 bg-zinc-600/80 rounded-full" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 flex-shrink-0">
+          <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+            <span>{isEdit ? '✏️' : '✨'}</span>
+            <span>{isEdit ? 'Sửa công việc' : 'Thêm công việc mới'}</span>
           </h3>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100">
+          <button 
+            type="button" 
+            onClick={onClose} 
+            className="p-1.5 text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-colors active:scale-95"
+            aria-label="Đóng"
+          >
             <X size={18} />
           </button>
         </div>
 
-        <div className="space-y-4">
+        {/* Scrollable Form Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 max-h-[65dvh]">
           {/* Title */}
           <div>
-            <label className="text-xs font-700 text-gray-500 mb-1 block">Tên công việc *</label>
+            <label className="text-xs font-bold text-zinc-300 mb-1.5 block">
+              Tên công việc <span className="text-rose-400">*</span>
+            </label>
             <input
               className="input-romantic"
               value={form.title}
               onChange={e => set('title', e.target.value)}
-              placeholder="Ví dụ: Đi bơi buổi tối..."
+              placeholder="Ví dụ: Đi bơi, xem phim, dọn phòng..."
+              autoFocus
             />
           </div>
 
           {/* Days Selection */}
           <div>
-            <label className="text-xs font-700 text-gray-500 mb-2 block">Ngày áp dụng (chọn được nhiều ngày)</label>
-            <div className="flex flex-wrap gap-2">
-              {DAYS_SHORT_EN.map((d, i) => (
-                <button
-                  key={i}
-                  onClick={() => toggleDay(i)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-700 transition-all ${
-                    selectedDays.includes(i) 
-                      ? 'bg-pink-500 text-white shadow-md' 
-                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                  }`}
-                >
-                  {d}
-                </button>
-              ))}
+            <label className="text-xs font-bold text-zinc-300 mb-2 flex items-center justify-between">
+              <span>Ngày áp dụng</span>
+              <span className="text-[11px] text-zinc-400 font-normal">Đã chọn {selectedDays.length} ngày</span>
+            </label>
+            <div className="grid grid-cols-7 gap-1.5">
+              {DAYS_SHORT_EN.map((d, i) => {
+                const isSelected = selectedDays.includes(i);
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => toggleDay(i)}
+                    className={`py-2 rounded-xl text-xs font-bold transition-all border text-center active:scale-95 ${
+                      isSelected 
+                        ? 'bg-rose-500 text-white border-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.4)]' 
+                        : 'bg-zinc-800/80 text-zinc-400 border-white/10 hover:text-white hover:bg-zinc-700/80'
+                    }`}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Time */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Time Picker */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-700 text-gray-500 mb-1 block">Giờ bắt đầu</label>
+              <label className="text-xs font-bold text-zinc-300 mb-1.5 block">Giờ bắt đầu</label>
               <input 
                 className="input-romantic" 
                 type="time" 
@@ -197,7 +246,7 @@ export function TaskModal({ task, onClose, onSave }) {
               />
             </div>
             <div>
-              <label className="text-xs font-700 text-gray-500 mb-1 block">Giờ kết thúc (Tuỳ chọn)</label>
+              <label className="text-xs font-bold text-zinc-300 mb-1.5 block">Giờ kết thúc (tuỳ chọn)</label>
               <input 
                 className="input-romantic" 
                 type="time" 
@@ -211,60 +260,113 @@ export function TaskModal({ task, onClose, onSave }) {
             </div>
           </div>
 
-          {/* Person & Category */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-700 text-gray-500 mb-1 block">Người phụ trách</label>
-              <select className="input-romantic" value={form.person} onChange={e => set('person', e.target.value)}>
-                {Object.entries(PERSONS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
-              </select>
+          {/* Person Selector */}
+          <div>
+            <label className="text-xs font-bold text-zinc-300 mb-2 block">Người phụ trách</label>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.entries(PERSONS).map(([k, v]) => {
+                const isSelected = form.person === k;
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => set('person', k)}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 active:scale-95 ${
+                      isSelected
+                        ? 'bg-white/20 text-white border-white/40 shadow-sm'
+                        : 'bg-zinc-800/60 text-zinc-400 border-white/10 hover:bg-zinc-700/60 hover:text-white'
+                    }`}
+                  >
+                    <span>{v.emoji}</span>
+                    <span>{v.label}</span>
+                  </button>
+                );
+              })}
             </div>
-            <div>
-              <label className="text-xs font-700 text-gray-500 mb-1 block">Phân loại</label>
-              <select className="input-romantic" value={form.category} onChange={e => set('category', e.target.value)}>
-                {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
-              </select>
+          </div>
+
+          {/* Category Selector */}
+          <div>
+            <label className="text-xs font-bold text-zinc-300 mb-2 block">Phân loại</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {Object.entries(CATEGORIES).map(([k, v]) => {
+                const isSelected = form.category === k;
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => set('category', k)}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 active:scale-95 ${
+                      isSelected
+                        ? 'bg-rose-500/20 text-rose-200 border-rose-400/50 shadow-sm'
+                        : 'bg-zinc-800/60 text-zinc-400 border-white/10 hover:bg-zinc-700/60 hover:text-white'
+                    }`}
+                  >
+                    <span>{v.icon}</span>
+                    <span className="truncate">{v.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {/* Priority */}
           <div>
-            <label className="text-xs font-700 text-gray-500 mb-1 block">Ưu tiên</label>
-            <div className="flex gap-2">
-              {['HIGH', 'MEDIUM', 'LOW'].map(p => (
-                <button
-                  key={p}
-                  onClick={() => set('priority', p)}
-                  className="flex-1 py-2 rounded-xl text-xs font-700 border-2 transition-all"
-                  style={{
-                    borderColor: form.priority === p ? PRIORITY[p].color : '#f0d0d7',
-                    background: form.priority === p ? PRIORITY[p].bg : 'white',
-                    color: form.priority === p ? PRIORITY[p].color : '#999',
-                  }}
-                >
-                  {PRIORITY[p].label}
-                </button>
-              ))}
+            <label className="text-xs font-bold text-zinc-300 mb-2 block">Độ ưu tiên</label>
+            <div className="grid grid-cols-3 gap-2">
+              {['HIGH', 'MEDIUM', 'LOW'].map(p => {
+                const isSelected = form.priority === p;
+                const dotColor = p === 'HIGH' ? 'bg-rose-500' : p === 'MEDIUM' ? 'bg-amber-400' : 'bg-emerald-400';
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => set('priority', p)}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 active:scale-95 ${
+                      isSelected
+                        ? 'bg-white/20 text-white border-white/40 shadow-sm'
+                        : 'bg-zinc-800/60 text-zinc-400 border-white/10 hover:bg-zinc-700/60 hover:text-white'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${dotColor}`} />
+                    <span>{PRIORITY[p].label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
 
-        <div className="flex gap-3 mt-6">
+        {/* Footer Actions */}
+        <div className="p-4 border-t border-white/10 bg-zinc-950 flex items-center gap-2.5 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] flex-shrink-0">
           {isEdit && (
             <button 
-              className="p-3 bg-red-50 text-red-500 hover:bg-red-100 rounded-xl transition-colors flex items-center justify-center flex-shrink-0" 
+              type="button"
+              className="p-3 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30 rounded-xl transition-colors active:scale-95 flex items-center justify-center flex-shrink-0" 
               onClick={() => { deleteTask(task.id); onClose(); }}
               title="Xóa công việc"
             >
               <Trash2 size={18} />
             </button>
           )}
-          <button className="btn-secondary flex-1" onClick={onClose}>Hủy</button>
-          <button className="btn-primary flex-1" onClick={handleSave}>
+          <button 
+            type="button" 
+            className="btn-secondary flex-1 py-3" 
+            onClick={onClose}
+          >
+            Hủy
+          </button>
+          <button 
+            type="button" 
+            className="btn-primary flex-1 py-3" 
+            onClick={handleSave}
+          >
             {isEdit ? 'Lưu thay đổi' : 'Thêm mới ✨'}
           </button>
         </div>
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }

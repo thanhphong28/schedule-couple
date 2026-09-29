@@ -1,25 +1,23 @@
 // components/tabs/Tab1Today.jsx
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Calendar, CheckCircle2, ChevronLeft, ChevronRight, Clock, Plus, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
-import { CATEGORIES, DAYS, DAYS_EN, DAYS_SHORT_EN } from '../../data/initialTasks.js';
+import { CATEGORIES, DAYS, DAYS_SHORT_EN, PERSONS } from '../../data/initialTasks.js';
 import { getDayIndex } from '../../lib/utils.js';
 import { TaskCard, TaskModal } from '../shared/TaskCard.jsx';
 
 // Timeline configs
 const START_HOUR = 6; // 06:00
 const END_HOUR = 24; // 24:00
-const PIXELS_PER_HOUR = 65; // 1 hour = 65px
+const PIXELS_PER_HOUR = 64; // 1 hour = 64px
 const TIMELINE_HEIGHT = (END_HOUR - START_HOUR) * PIXELS_PER_HOUR;
-
-// Generate hourly labels
 const HOURS = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
 
 function timeToNum(t) {
   if (!t) return 0;
   const startStr = t.split('-')[0].trim();
   const [h, m] = startStr.split(':').map(Number);
-  return h * 60 + (m || 0);
+  return (h || 0) * 60 + (m || 0);
 }
 
 function parseTimeRange(t) {
@@ -31,7 +29,7 @@ function parseTimeRange(t) {
   const sm = startParts[1] || 0;
   const startDec = sh + sm / 60;
   
-  let endDec = startDec + 0.5; // Default 30 mins if no end time
+  let endDec = startDec + 0.5; // Default 30 mins
   if (parts.length > 1 && parts[1].trim() !== '') {
     const endParts = parts[1].trim().split(':').map(Number);
     const eh = endParts[0] || 0;
@@ -44,409 +42,380 @@ function parseTimeRange(t) {
   return { start: startDec, end: endDec };
 }
 
-function TimetableDay({ dayIdx, tasks, onSelectTask }) {
-  const dayTasks = tasks.filter(t => t.day === dayIdx);
-
-  return (
-    <div className="relative w-full" style={{ height: TIMELINE_HEIGHT }}>
-      {/* Background Grid Lines */}
-      {HOURS.map(hour => (
-        <div 
-          key={hour} 
-          className="absolute w-full border-t border-white/5"
-          style={{ top: (hour - START_HOUR) * PIXELS_PER_HOUR, height: PIXELS_PER_HOUR }}
-        />
-      ))}
-      
-      {/* Column Dividers */}
-      <div className="absolute top-0 bottom-0 left-1/2 w-px border-r border-dashed border-white/10 z-0" />
-
-      {/* Render Tasks */}
-      {dayTasks.map(t => {
-        const { start, end } = parseTimeRange(t.time);
-        
-        // Ensure bounds
-        const safeStart = Math.max(START_HOUR, start);
-        const safeEnd = Math.min(END_HOUR, Math.max(safeStart + 0.25, end));
-        
-        const top = (safeStart - START_HOUR) * PIXELS_PER_HOUR;
-        const height = (safeEnd - safeStart) * PIXELS_PER_HOUR;
-        
-        // Determine columns
-        let left = '0%';
-        let width = '100%';
-        if (t.person === 'THI') {
-          width = '50%';
-        } else if (t.person === 'PHONG') {
-          left = '50%';
-          width = '50%';
-        }
-        
-        // Very short tasks might need minimum height for text
-        const isSmall = height < 35;
-        
-        return (
-          <div
-            key={t.id}
-            onClick={() => onSelectTask?.(t)}
-            className="absolute z-10 transition-transform hover:scale-[1.02] hover:z-30 cursor-pointer flex flex-col"
-            style={{ 
-              top, 
-              height, 
-              left, 
-              width,
-              padding: '2px',
-            }}
-          >
-            <div 
-              className="w-full h-full rounded-[14px] flex flex-col relative transition-all duration-300 hover:shadow-[0_8px_24px_rgba(0,0,0,0.15)] group overflow-hidden"
-              style={{ 
-                backgroundColor: t.is_completed ? 'rgba(20, 20, 25, 0.45)' : 'rgba(35, 35, 42, 0.55)',
-                backdropFilter: 'blur(20px) saturate(120%)',
-                boxShadow: '0 4px 14px rgba(0,0,0,0.12), inset 0 1px 1px rgba(255,255,255,0.2)',
-                border: '1px solid rgba(255,255,255,0.2)'
-              }}
-              title={t.title + (t.time ? ` (${t.time})` : '')}
-            >
-              {/* Left Color Bar */}
-              <div 
-                className="absolute left-0 top-0 bottom-0 w-1.5 transition-all group-hover:w-2 rounded-l-[12px]"
-                style={{ backgroundColor: t.is_completed ? '#4ade80' : (CATEGORIES[t.category]?.color || '#E27387') }}
-              />
-              
-              <div className="pl-3 pr-2 py-1.5 flex-1 flex flex-col overflow-y-auto scrollbar-none">
-                {!isSmall && (
-                  <div className="text-[10px] text-pink-200/90 font-bold mb-0.5 tracking-tight whitespace-nowrap flex-shrink-0">
-                    {t.time}
-                  </div>
-                )}
-                <div 
-                  className={`text-[11px] sm:text-xs font-extrabold leading-snug pb-0.5 ${t.is_completed ? 'text-white/40 line-through' : 'text-white'}`}
-                  style={{ wordBreak: 'break-word' }}
-                >
-                  {t.is_completed && '✅ '}
-                  {t.title}
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function Tab1Today() {
   const { tasks } = useApp();
   const todayIdx = getDayIndex();
   const [selectedDay, setSelectedDay] = useState(todayIdx);
+  const [viewMode, setViewMode] = useState('timeline'); // 'timeline' | 'list'
   const [editTask, setEditTask] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [currentTimeDec, setCurrentTimeDec] = useState(() => {
+    const now = new Date();
+    return now.getHours() + now.getMinutes() / 60;
+  });
 
-  const scrollContainerRef = useRef(null);
-  const isProgrammaticScroll = useRef(false);
-
-  // Filter tasks for focus section
-  const dayTasks = tasks
-    .filter(t => t.day === selectedDay)
-    .sort((a, b) => timeToNum(a.time) - timeToNum(b.time));
-
-  const completed = dayTasks.filter(t => t.is_completed).length;
-  const pct = dayTasks.length > 0 ? Math.round((completed / dayTasks.length) * 100) : 0;
-
-  const scrollTimeoutRef = useRef(null);
-
-  // Scroll to a specific day column
-  const scrollToDay = (di, behavior = 'smooth') => {
-    if (!scrollContainerRef.current) return;
-    const container = scrollContainerRef.current;
-    const dayWidth = container.clientWidth;
-    if (dayWidth > 0) {
-      isProgrammaticScroll.current = true;
-      setSelectedDay(di);
-      container.scrollTo({ left: di * dayWidth, behavior });
-      
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = setTimeout(() => {
-        isProgrammaticScroll.current = false;
-      }, 800);
-    }
-  };
-
-  const selectedDayRef = useRef(selectedDay);
-  selectedDayRef.current = selectedDay;
-  const hasMountedRef = useRef(false);
-
-  // On mount: smoothly auto-align to today ONCE only
+  // Keep current time updated every minute
   useEffect(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
-      const timer = setTimeout(() => {
-        scrollToDay(todayIdx, 'auto');
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [todayIdx]);
-
-  // Window resize: maintain current day position
-  useEffect(() => {
-    const handleResize = () => {
-      if (scrollContainerRef.current) {
-        const container = scrollContainerRef.current;
-        const dayWidth = container.clientWidth;
-        container.scrollTo({ left: selectedDayRef.current * dayWidth, behavior: 'auto' });
-      }
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    const timer = setInterval(() => {
+      const now = new Date();
+      setCurrentTimeDec(now.getHours() + now.getMinutes() / 60);
+    }, 60000);
+    return () => clearInterval(timer);
   }, []);
 
-  // Track swiping gestures to update the active day
-  const handleScroll = () => {
-    if (isProgrammaticScroll.current || !scrollContainerRef.current) return;
-    const container = scrollContainerRef.current;
-    const dayWidth = container.clientWidth;
-    if (dayWidth > 50) {
-      const scrollPos = container.scrollLeft;
-      const activeIdx = Math.round(scrollPos / dayWidth);
-      const clamped = Math.max(0, Math.min(6, activeIdx));
-      if (clamped !== selectedDay) {
-        setSelectedDay(clamped);
+  // Filter tasks for the selected day
+  const dayTasks = useMemo(() => {
+    return tasks
+      .filter(t => t.day === selectedDay)
+      .sort((a, b) => timeToNum(a.time) - timeToNum(b.time));
+  }, [tasks, selectedDay]);
+
+  const completed = dayTasks.filter(t => t.is_completed).length;
+  const total = dayTasks.length;
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  // Counts per day for day selector pills
+  const taskCountsByDay = useMemo(() => {
+    const counts = Array(7).fill(0);
+    tasks.forEach(t => {
+      if (t.day >= 0 && t.day < 7) counts[t.day]++;
+    });
+    return counts;
+  }, [tasks]);
+
+  const handlePrevDay = () => setSelectedDay(prev => Math.max(0, prev - 1));
+  const handleNextDay = () => setSelectedDay(prev => Math.min(6, prev + 1));
+
+  // Touch swipe support on timetable card
+  const touchStartX = useRef(0);
+  const touchEndX = useRef(0);
+
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.targetTouches[0].clientX;
+  };
+  const handleTouchMove = (e) => {
+    touchEndX.current = e.targetTouches[0].clientX;
+  };
+  const handleTouchEnd = () => {
+    const diff = touchStartX.current - touchEndX.current;
+    if (Math.abs(diff) > 55) {
+      if (diff > 0 && selectedDay < 6) {
+        setSelectedDay(prev => prev + 1); // Swipe left -> Next day
+      } else if (diff < 0 && selectedDay > 0) {
+        setSelectedDay(prev => prev - 1); // Swipe right -> Prev day
       }
     }
   };
 
-  const goToPrevDay = () => {
-    const prev = Math.max(0, selectedDay - 1);
-    scrollToDay(prev, 'smooth');
-  };
-
-  const goToNextDay = () => {
-    const next = Math.min(6, selectedDay + 1);
-    scrollToDay(next, 'smooth');
-  };
+  const isToday = selectedDay === todayIdx;
 
   return (
-    <div className="px-3 sm:px-5 py-4 space-y-6 animate-fadeInUp">
-      {/* TIMETABLE OVERVIEW */}
-      <section>
-        {/* Navigation Bar for Timetable */}
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+    <div className="px-3 sm:px-4 py-2 space-y-4 animate-fadeInUp">
+      
+      {/* ─── DAY SELECTOR STRIP ─── */}
+      <section className="glass-panel p-2 rounded-[24px] shadow-lg">
+        {/* Navigation & Header Controls */}
+        <div className="flex items-center justify-between px-2 py-1.5 mb-2">
           <div className="flex items-center gap-2">
-            <span className="text-lg sm:text-xl font-black text-white drop-shadow-sm uppercase tracking-wide">
-              📅 Thời khóa biểu
+            <span className="text-sm font-extrabold text-white flex items-center gap-1.5">
+              <span>📅</span>
+              <span>{DAYS[selectedDay]}</span>
             </span>
-            <span className="badge liquid-glass border-white/40 text-pink-100 px-2.5 py-0.5 text-xs shadow-sm font-bold">
-              {DAYS_SHORT_EN[selectedDay]} • {DAYS[selectedDay]}
-            </span>
+            {isToday ? (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/25 text-rose-300 border border-rose-500/35 animate-pulse-subtle">
+                Hôm nay ✨
+              </span>
+            ) : (
+              <button 
+                type="button"
+                onClick={() => setSelectedDay(todayIdx)}
+                className="px-2 py-0.5 rounded-full text-[10px] font-bold text-zinc-300 bg-white/10 hover:bg-white/15 border border-white/15 transition-all active:scale-95"
+              >
+                Về hôm nay
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button 
-              onClick={goToPrevDay}
+          {/* Prev / Next Chevrons */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handlePrevDay}
               disabled={selectedDay === 0}
-              className="p-2 rounded-xl liquid-glass border border-white/20 text-white/80 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all active:scale-95 shadow-sm"
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white disabled:opacity-20 disabled:pointer-events-none transition-all active:scale-90"
               aria-label="Ngày trước"
             >
               <ChevronLeft size={16} strokeWidth={2.5} />
             </button>
             <button
-              onClick={() => scrollToDay(todayIdx, 'smooth')}
-              className={`px-3 py-1.5 text-xs font-extrabold rounded-xl transition-all active:scale-95 shadow-sm border ${
-                selectedDay === todayIdx
-                  ? 'bg-pink-500 text-white border-pink-400'
-                  : 'liquid-glass border-white/30 text-pink-200 hover:bg-white/10'
-              }`}
-            >
-              Hôm nay ✨
-            </button>
-            <button 
-              onClick={goToNextDay}
+              type="button"
+              onClick={handleNextDay}
               disabled={selectedDay === 6}
-              className="p-2 rounded-xl liquid-glass border border-white/20 text-white/80 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all active:scale-95 shadow-sm"
-              aria-label="Ngày tiếp theo"
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white disabled:opacity-20 disabled:pointer-events-none transition-all active:scale-90"
+              aria-label="Ngày sau"
             >
               <ChevronRight size={16} strokeWidth={2.5} />
             </button>
           </div>
         </div>
 
-        {/* Day Quick Selector Pills */}
-        <div className="flex items-center gap-1 mb-3 overflow-x-auto scrollbar-none pb-1">
-          {DAYS_SHORT_EN.map((shortName, idx) => (
-            <button
-              key={idx}
-              onClick={() => scrollToDay(idx, 'smooth')}
-              className={`flex-1 min-w-[42px] py-1.5 px-1 rounded-xl text-xs font-extrabold transition-all border text-center ${
-                selectedDay === idx
-                  ? 'bg-white/25 text-white border-white/60 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] scale-105'
-                  : idx === todayIdx
-                  ? 'bg-pink-500/20 text-pink-200 border-pink-400/40 hover:bg-pink-500/30'
-                  : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              {shortName}
-              {idx === todayIdx && <span className="block text-[8px] text-pink-300 leading-none mt-0.5">•</span>}
-            </button>
-          ))}
+        {/* 7 Day Pills */}
+        <div className="grid grid-cols-7 gap-1">
+          {DAYS_SHORT_EN.map((shortName, idx) => {
+            const isSelected = selectedDay === idx;
+            const isDayToday = todayIdx === idx;
+            const count = taskCountsByDay[idx];
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setSelectedDay(idx)}
+                className={`py-2 px-1 rounded-2xl flex flex-col items-center justify-center transition-all duration-200 active:scale-95 ${
+                  isSelected
+                    ? 'bg-gradient-to-b from-rose-500 to-rose-600 text-white font-extrabold shadow-[0_4px_16px_rgba(244,63,94,0.45)] border border-rose-400'
+                    : isDayToday
+                    ? 'bg-rose-500/15 text-rose-200 border border-rose-500/30'
+                    : 'bg-white/5 text-zinc-400 border border-white/5 hover:bg-white/10 hover:text-zinc-200'
+                }`}
+              >
+                <span className="text-[11px] font-bold">{shortName}</span>
+                <div className="flex items-center gap-0.5 mt-1">
+                  {count > 0 ? (
+                    <span className={`text-[9px] px-1 py-0.2 rounded-full font-black ${
+                      isSelected ? 'bg-white/30 text-white' : 'bg-white/10 text-zinc-300'
+                    }`}>
+                      {count}
+                    </span>
+                  ) : (
+                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-600/40" />
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ─── SUMMARY STATS & VIEW TOGGLE ─── */}
+      <div className="flex items-center justify-between gap-3 px-1">
+        {/* Progress Pill */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-900/80 border border-white/10 text-xs font-bold text-zinc-200">
+            <CheckCircle2 size={13} className={pct === 100 ? 'text-emerald-400' : 'text-rose-400'} />
+            <span>{completed}/{total} việc</span>
+            <span className="text-zinc-500">•</span>
+            <span className={pct === 100 ? 'text-emerald-400 font-black' : 'text-rose-300 font-black'}>{pct}%</span>
+          </div>
         </div>
 
-        {/* Timetable Card: Side-by-side Time Column and Swipeable Days Track */}
-        <div className="liquid-glass rounded-[28px] overflow-hidden border border-white/30 shadow-[0_12px_40px_rgba(0,0,0,0.15)] flex">
-          {/* Left: Stationary Time column */}
-          <div 
-            className="relative min-w-[50px] sm:min-w-[58px] w-[50px] sm:w-[58px] pr-2 flex-shrink-0 bg-[#1c1c24]/90 backdrop-blur-xl border-r border-white/10 shadow-[4px_0_16px_rgba(0,0,0,0.2)] z-10 pt-2" 
-            style={{ height: TIMELINE_HEIGHT + 60 }}
+        {/* View Switcher: Timeline vs List */}
+        <div className="p-1 rounded-2xl bg-zinc-900/90 border border-white/10 flex items-center gap-1 shadow-inner">
+          <button
+            type="button"
+            onClick={() => setViewMode('timeline')}
+            className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              viewMode === 'timeline'
+                ? 'bg-white/20 text-white shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
           >
-            <div className="h-12 mb-2 flex items-center justify-end pr-2 text-[10px] font-black text-white/60 uppercase tracking-widest">
+            <Clock size={12} />
+            <span>Lịch</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              viewMode === 'list'
+                ? 'bg-white/20 text-white shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Calendar size={12} />
+            <span>Việc</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ─── VIEW 1: TIMELINE (Visual Daily Schedule) ─── */}
+      {viewMode === 'timeline' && (
+        <section 
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          className="glass-panel rounded-[28px] overflow-hidden border border-white/10 shadow-2xl relative"
+        >
+          {/* Header of Timeline: Thi vs Phong Column headers */}
+          <div className="flex border-b border-white/10 bg-zinc-950/60 sticky top-0 z-20 backdrop-blur-xl">
+            {/* Time label column space */}
+            <div className="w-[50px] flex-shrink-0 text-center py-2 text-[10px] font-black uppercase tracking-wider text-zinc-400 border-r border-white/10">
               Giờ
             </div>
-            {HOURS.map(hour => (
-              <div 
-                key={hour} 
-                className="absolute w-full text-right pr-2 text-[11px] font-extrabold text-white/80"
-                style={{ top: (hour - START_HOUR) * PIXELS_PER_HOUR + 56 + 8 - 7 }}
-              >
-                {hour.toString().padStart(2, '0')}:00
-              </div>
-            ))}
+            {/* Thi Column */}
+            <div className="flex-1 py-2 text-center text-xs font-black uppercase tracking-wider text-pink-300 bg-pink-500/10 border-r border-white/10 flex items-center justify-center gap-1.5">
+              <span>👧</span> Thi
+            </div>
+            {/* Phong Column */}
+            <div className="flex-1 py-2 text-center text-xs font-black uppercase tracking-wider text-sky-300 bg-sky-500/10 flex items-center justify-center gap-1.5">
+              <span>👦</span> Phong
+            </div>
           </div>
 
-          {/* Right: Days Carousel / Swipe Track */}
-          <div 
-            ref={scrollContainerRef}
-            onScroll={handleScroll}
-            className="flex-1 overflow-x-auto pb-4 pt-2 scrollbar-none snap-x snap-mandatory flex relative"
-          >
-            {DAYS.map((day, di) => (
-              <div 
-                key={di} 
-                data-day-idx={di}
-                className="w-full min-w-full flex-shrink-0 px-2 snap-start relative" 
-                style={{ height: TIMELINE_HEIGHT + 60 }}
-              >
-                {/* Header for Day (Day title + Thi & Phong split) */}
-                <div className="h-12 mb-2 bg-white/5 rounded-2xl p-1.5 border border-white/10 backdrop-blur-md flex flex-col justify-center">
-                  <div className="flex items-center justify-between px-2 mb-1">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-white flex items-center gap-1.5">
-                      {DAYS_EN[di]} <span className="text-white/40">•</span> <span className="text-white/80 font-semibold">{day}</span>
-                    </span>
-                    {di === todayIdx ? (
-                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-pink-500/30 text-pink-200 border border-pink-500/40">
-                        Hôm nay ✨
-                      </span>
-                    ) : (
-                      <span className="text-[9px] font-bold text-white/40 uppercase">
-                        Vuốt để đổi ↔
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex text-[10px] font-black uppercase tracking-widest text-white/90">
-                    <div className="w-1/2 text-center text-pink-300 flex items-center justify-center gap-1">
-                      <span>👧</span> Thi
-                    </div>
-                    <div className="w-1/2 text-center text-sky-300 flex items-center justify-center gap-1">
-                      <span>👦</span> Phong
-                    </div>
-                  </div>
+          {/* Timeline Scroll Area */}
+          <div className="relative flex overflow-y-auto max-h-[65dvh] scrollbar-none" style={{ height: TIMELINE_HEIGHT }}>
+            {/* Left: Time Ruler */}
+            <div className="w-[50px] flex-shrink-0 bg-zinc-950/50 border-r border-white/10 relative z-10 select-none">
+              {HOURS.map(hour => (
+                <div 
+                  key={hour} 
+                  className="absolute w-full text-right pr-2 text-[11px] font-bold text-zinc-400"
+                  style={{ top: (hour - START_HOUR) * PIXELS_PER_HOUR + 2 }}
+                >
+                  {hour.toString().padStart(2, '0')}:00
                 </div>
-                
-                {/* Timeline content for this day */}
-                <TimetableDay 
-                  dayIdx={di} 
-                  tasks={tasks} 
-                  onSelectTask={(t) => { setEditTask(t); setShowModal(true); }}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* TODAY FOCUS SECTION */}
-      <section>
-        <div className="liquid-glass rounded-[28px] overflow-hidden border border-white/30 shadow-[0_12px_40px_rgba(0,0,0,0.15)]">
-          {/* Header */}
-          <div className="px-5 py-5 border-b border-white/20 bg-white/10">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div>
-                <h2 className="text-lg font-black text-white drop-shadow-sm uppercase tracking-wide">
-                  🎯 Tiêu điểm: {DAYS_EN[selectedDay]} ({DAYS[selectedDay]})
-                </h2>
-                <p className="text-xs text-white/80 font-bold mt-1 tracking-wide">
-                  {dayTasks.length} việc • {completed} hoàn thành
-                </p>
-              </div>
-              {/* Day selector */}
-              <div className="flex flex-wrap gap-1.5">
-                {DAYS.map((d, i) => (
-                  <button
-                    key={i}
-                    className={`day-chip text-xs font-extrabold transition-all px-3 py-1.5 rounded-full border ${
-                      selectedDay === i 
-                        ? 'bg-white/30 text-white border-white/60 shadow-sm' 
-                        : 'bg-transparent text-white/60 border-white/20 hover:bg-white/10'
-                    }`}
-                    onClick={() => scrollToDay(i, 'smooth')}
-                  >
-                    {DAYS_SHORT_EN[i]}
-                    {i === todayIdx && selectedDay !== i && (
-                      <span className="ml-1 text-pink-300">•</span>
-                    )}
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
 
-            {/* Day progress bar */}
-            {dayTasks.length > 0 && (
-              <div className="mt-4">
-                <div className="progress-bar bg-black/10 h-2 rounded-full overflow-hidden backdrop-blur-sm border border-white/20">
-                  <div 
-                    className="progress-fill h-full rounded-full transition-all duration-700" 
-                    style={{ width: `${pct}%`, background: `linear-gradient(90deg, rgba(226,115,135,0.6), #E27387)` }} 
-                  />
+            {/* Right: Schedule Canvas */}
+            <div className="flex-1 relative">
+              {/* Horizontal Hour Grid Lines */}
+              {HOURS.map(hour => (
+                <div 
+                  key={hour} 
+                  className="absolute w-full border-t border-white/5"
+                  style={{ top: (hour - START_HOUR) * PIXELS_PER_HOUR }}
+                />
+              ))}
+
+              {/* Vertical Column Divider (Between Thi & Phong) */}
+              <div className="absolute top-0 bottom-0 left-1/2 w-px border-r border-dashed border-white/10 pointer-events-none" />
+
+              {/* Live Current Time Line (if today) */}
+              {isToday && currentTimeDec >= START_HOUR && currentTimeDec <= END_HOUR && (
+                <div 
+                  className="absolute left-0 right-0 z-20 flex items-center pointer-events-none"
+                  style={{ top: (currentTimeDec - START_HOUR) * PIXELS_PER_HOUR }}
+                >
+                  <div className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e] -ml-1" />
+                  <div className="flex-1 h-0.5 bg-gradient-to-r from-rose-500 via-rose-400 to-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]" />
+                  <span className="text-[9px] font-black px-1 rounded bg-rose-500 text-white mr-1 shadow-sm">
+                    Hiện tại
+                  </span>
                 </div>
-                <p className="text-xs text-right mt-1.5 font-black text-pink-100 drop-shadow-sm">{pct}%</p>
-              </div>
-            )}
+              )}
+
+              {/* Render Tasks on Timeline */}
+              {dayTasks.map(t => {
+                const { start, end } = parseTimeRange(t.time);
+                const safeStart = Math.max(START_HOUR, start);
+                const safeEnd = Math.min(END_HOUR, Math.max(safeStart + 0.35, end));
+                
+                const top = (safeStart - START_HOUR) * PIXELS_PER_HOUR;
+                const height = Math.max(34, (safeEnd - safeStart) * PIXELS_PER_HOUR);
+
+                // Column placement
+                let left = '0%';
+                let width = '100%';
+                if (t.person === 'THI') {
+                  width = '50%';
+                } else if (t.person === 'PHONG') {
+                  left = '50%';
+                  width = '50%';
+                }
+
+                const catColor = CATEGORIES[t.category]?.color || '#F43F5E';
+
+                return (
+                  <div
+                    key={t.id}
+                    onClick={() => { setEditTask(t); setShowModal(true); }}
+                    className="absolute z-10 p-0.5 cursor-pointer select-none transition-transform active:scale-[0.98]"
+                    style={{ top, height, left, width }}
+                  >
+                    <div 
+                      className={`w-full h-full rounded-xl p-1.5 flex flex-col justify-start relative overflow-hidden border backdrop-blur-md transition-all ${
+                        t.is_completed 
+                          ? 'bg-zinc-950/70 border-white/5 opacity-60' 
+                          : 'bg-zinc-900/85 border-white/15 hover:border-white/30 shadow-md'
+                      }`}
+                    >
+                      {/* Left Category Indicator */}
+                      <div 
+                        className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
+                        style={{ backgroundColor: t.is_completed ? '#52525b' : catColor }}
+                      />
+
+                      <div className="pl-1.5 min-w-0">
+                        {t.time && (
+                          <div className="text-[10px] font-bold text-rose-300 leading-tight truncate">
+                            {t.time}
+                          </div>
+                        )}
+                        <div className={`text-xs font-bold leading-tight truncate mt-0.5 ${
+                          t.is_completed ? 'line-through text-zinc-400 font-medium' : 'text-white'
+                        }`}>
+                          {t.is_completed ? '✓ ' : ''}{t.title}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Task List */}
-          <div className="p-4 sm:p-5">
-            {dayTasks.length === 0 ? (
-              <div className="text-center py-10 liquid-glass border-white/20 rounded-2xl mx-2">
-                <div className="text-4xl mb-3 drop-shadow-sm">🌸</div>
-                <p className="text-white/90 font-bold text-sm tracking-wide">Không có việc nào cho ngày này!</p>
-                <button
-                  className="btn-primary mt-5 text-sm shadow-xl shadow-pink-500/20"
-                  onClick={() => { setEditTask(null); setShowModal(true); }}
-                >
-                  + Thêm việc mới
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {dayTasks.map(task => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    onEdit={(t) => { setEditTask(t); setShowModal(true); }}
-                  />
-                ))}
-                <button
-                  className="w-full mt-4 py-3.5 rounded-2xl liquid-glass border border-dashed border-white/60 text-white font-bold hover:bg-white/20 transition-all uppercase tracking-widest text-xs"
-                  onClick={() => { setEditTask(null); setShowModal(true); }}
-                >
-                  + Thêm việc cho ngày này
-                </button>
-              </div>
-            )}
+          {/* Quick swipe hint footer */}
+          <div className="py-2 px-3 bg-zinc-950/70 border-t border-white/10 flex items-center justify-center text-[11px] text-zinc-400">
+            <span className="flex items-center gap-1">
+              <span>↔</span> Vuốt để đổi ngày trong tuần
+            </span>
           </div>
+        </section>
+      )}
+
+      {/* ─── VIEW 2: TASK LIST FOCUS ─── */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-sm font-extrabold text-white flex items-center gap-1.5">
+            <span>🎯</span>
+            <span>Việc cần làm ({dayTasks.length})</span>
+          </h3>
+          <button
+            type="button"
+            onClick={() => { setEditTask(null); setShowModal(true); }}
+            className="btn-primary text-xs py-1.5 px-3 rounded-xl"
+          >
+            <Plus size={14} /> Thêm việc
+          </button>
         </div>
+
+        {dayTasks.length === 0 ? (
+          <div className="glass-panel rounded-3xl p-8 text-center border-white/10">
+            <div className="text-4xl mb-2">🌸</div>
+            <p className="text-sm font-bold text-zinc-200">Không có công việc nào cho ngày này</p>
+            <p className="text-xs text-zinc-400 mt-1">Hãy tận hưởng thời gian nghỉ ngơi hoặc lên kế hoạch mới!</p>
+            <button
+              type="button"
+              className="btn-primary mt-4 text-xs py-2 px-4 shadow-lg shadow-rose-500/20"
+              onClick={() => { setEditTask(null); setShowModal(true); }}
+            >
+              + Thêm việc cho {DAYS[selectedDay]}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {dayTasks.map(task => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                onEdit={(t) => { setEditTask(t); setShowModal(true); }}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
-      {/* Modal */}
+      {/* ─── TASK MODAL / BOTTOM SHEET ─── */}
       {showModal && (
         <TaskModal
           task={editTask ? editTask : { day: selectedDay }}

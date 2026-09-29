@@ -2,12 +2,13 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { getInitialTasks } from '../data/initialTasks.js';
 import { isSupabaseReady, supabase } from '../lib/supabase.js';
-import { nanoid } from '../lib/utils.js';
+import { nanoid, playNotificationChime } from '../lib/utils.js';
 
 const AppContext = createContext(null);
 
 const LS_TASKS = 'sc_tasks_v2';
 const LS_REVIEWS = 'sc_reviews_v2';
+const LS_CUSTOM_WP = 'sc_custom_wallpapers_v1';
 
 function lsGet(key) {
   try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
@@ -29,6 +30,41 @@ async function sbGetReviews() {
   if (error) throw error;
   return data;
 }
+async function sbGetWallpapers() {
+  const { data, error } = await supabase
+    .from('wallpapers').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+async function sbUpsertWallpaper(wp) {
+  if (!isSupabaseReady) return;
+  try {
+    const { error } = await supabase.from('wallpapers').upsert(wp);
+    if (error) console.warn('Supabase wallpaper upsert error:', error.message);
+  } catch (err) {
+    console.warn('Supabase wallpaper upsert failed:', err);
+  }
+}
+async function sbDeleteWallpaper(id) {
+  if (!isSupabaseReady) return;
+  try {
+    const { error } = await supabase.from('wallpapers').delete().eq('id', id);
+    if (error) console.warn('Supabase wallpaper delete error:', error.message);
+  } catch (err) {
+    console.warn('Supabase wallpaper delete failed:', err);
+  }
+}
+
+export const PRESET_WALLPAPERS = [
+  { id: 'couple_sunset', name: 'Trái Tim Hoàng Hôn 🌅', url: '/wallpapers/couple_sunset.jpg', desc: 'Ấm áp & lãng mạn' },
+  { id: 'couple_hands', name: 'Nắm Tay Dạo Bước 🤝', url: '/wallpapers/couple_hands.jpg', desc: 'Bình yên bên nhau' },
+  { id: 'romantic_lights', name: 'Đốm Sáng Trái Tim ✨', url: '/wallpapers/romantic_lights.jpg', desc: 'Ánh đèn lung linh' },
+  { id: 'starry_mountains', name: 'Ngân Hà Núi Tuyết 🌌', url: '/wallpapers/starry_mountains.jpg', desc: 'Dải ngân hà thơ mộng' },
+  { id: 'twilight_clouds', name: 'Biển Chiều Hoàng Hôn ⛵', url: '/wallpapers/twilight_clouds.jpg', desc: 'Bình yên & sâu lắng' },
+  { id: 'cherry_blossom', name: 'Hoa Anh Đào Mùa Xuân 🌸', url: '/wallpapers/cherry_blossom.jpg', desc: 'Trong trẻo ngọt ngào' },
+  { id: 'dreamy_galaxy', name: 'Vũ Trụ Tình Yêu 🪐', url: '/wallpapers/dreamy_galaxy.jpg', desc: 'Huyền ảo & nhiệm màu' },
+  { id: 'aurora_mesh', name: 'Cực Quang Huyền Ảo 🔮', url: 'aurora', desc: 'Gradient lụa hiện đại' },
+];
 
 export function AppProvider({ children }) {
   const [tasks, setTasksRaw] = useState(() => {
@@ -38,6 +74,17 @@ export function AppProvider({ children }) {
   const [reviews, setReviewsRaw] = useState(() => lsGet(LS_REVIEWS) || []);
   const [activeTab, setActiveTab] = useState(0);
   const [synced, setSynced] = useState(false); // true after first Supabase load
+  const [wallpaper, setWallpaperRaw] = useState(() => {
+    return localStorage.getItem('sc_wallpaper') || 'couple_sunset';
+  });
+  const [customWallpapers, setCustomWallpapers] = useState(() => {
+    return lsGet(LS_CUSTOM_WP) || [];
+  });
+
+  function setWallpaper(id) {
+    setWallpaperRaw(id);
+    localStorage.setItem('sc_wallpaper', id);
+  }
 
   // ── Persist to localStorage ────────────────────────────────────────────────
   function setTasks(val) {
@@ -60,15 +107,22 @@ export function AppProvider({ children }) {
         if (e.key === LS_REVIEWS && e.newValue) {
           try { setReviewsRaw(JSON.parse(e.newValue)); } catch {}
         }
+        if (e.key === LS_CUSTOM_WP && e.newValue) {
+          try { setCustomWallpapers(JSON.parse(e.newValue)); } catch {}
+        }
       };
       window.addEventListener('storage', handler);
       return () => window.removeEventListener('storage', handler);
     }
 
     // Load initial data from Supabase
-    Promise.all([sbGetTasks(), sbGetReviews()]).then(([t, r]) => {
-      if (t.length > 0) setTasks(t); // prefer remote data
-      if (r.length > 0) setReviews(r);
+    Promise.all([sbGetTasks(), sbGetReviews(), sbGetWallpapers().catch(() => [])]).then(([t, r, wps]) => {
+      if (t && t.length > 0) setTasks(t); // prefer remote data
+      if (r && r.length > 0) setReviews(r);
+      if (wps && wps.length > 0) {
+        setCustomWallpapers(wps);
+        lsSet(LS_CUSTOM_WP, wps);
+      }
       setSynced(true);
     }).catch(err => {
       console.warn('Supabase load failed, using localStorage', err);
@@ -90,55 +144,204 @@ export function AppProvider({ children }) {
       })
       .subscribe();
 
+    const wpSub = supabase
+      .channel('wallpapers-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallpapers' }, () => {
+        sbGetWallpapers().then(wps => {
+          if (wps) {
+            setCustomWallpapers(wps);
+            lsSet(LS_CUSTOM_WP, wps);
+          }
+        }).catch(console.error);
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(taskSub);
       supabase.removeChannel(reviewSub);
+      supabase.removeChannel(wpSub);
     };
   }, []);
 
-  // ── Browser Notifications ──────────────────────────────────────────────────
+  // ── Custom Wallpaper operations ──────────────────────────────────────────
+  function addCustomWallpaper({ id, name, url }) {
+    const newWp = {
+      id: id || nanoid(),
+      name: name || 'Ảnh kỷ niệm 💕',
+      url,
+      is_custom: true,
+      created_at: new Date().toISOString(),
+    };
+    setCustomWallpapers(prev => {
+      const next = [newWp, ...prev.filter(w => w.id !== newWp.id)];
+      lsSet(LS_CUSTOM_WP, next);
+      return next;
+    });
+    setWallpaper(newWp.id);
+    sbUpsertWallpaper(newWp);
+    return newWp;
+  }
+
+  function deleteCustomWallpaper(id) {
+    setCustomWallpapers(prev => {
+      const next = prev.filter(w => w.id !== id);
+      lsSet(LS_CUSTOM_WP, next);
+      return next;
+    });
+    if (wallpaper === id) {
+      setWallpaper('couple_sunset');
+    }
+    sbDeleteWallpaper(id);
+  }
+
+  // ── Browser & In-App Notifications ──────────────────────────────────────────
+  const [activeNotification, setActiveNotification] = useState(null);
+  const [notifPermission, setNotifPermission] = useState(() => {
+    return typeof window !== 'undefined' && 'Notification' in window
+      ? Notification.permission
+      : 'unsupported';
+  });
+
+  const dismissNotification = () => setActiveNotification(null);
+
+  // Auto-dismiss banner after 8.5 seconds
+  useEffect(() => {
+    if (!activeNotification) return;
+    const timer = setTimeout(() => {
+      setActiveNotification(null);
+    }, 8500);
+    return () => clearTimeout(timer);
+  }, [activeNotification]);
+
+  const requestNotifPermission = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setNotifPermission('unsupported');
+      return 'unsupported';
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      setNotifPermission(perm);
+      return perm;
+    } catch (e) {
+      console.warn('Lỗi xin quyền thông báo:', e);
+      return 'denied';
+    }
+  };
+
+  const sendNotification = ({ title, body, taskId, isDue, timeStr }) => {
+    // 1. Pleasant soft audio chime
+    playNotificationChime();
+
+    // 2. In-App Floating Banner (guaranteed visibility on all devices)
+    setActiveNotification({
+      id: nanoid(),
+      title,
+      body,
+      taskId,
+      isDue,
+      timeStr,
+    });
+
+    // 3. System Web Notification (if permission granted by browser)
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        const notif = new Notification(title, {
+          body,
+          icon: '/favicon.ico',
+          badge: '/favicon.ico',
+          tag: taskId ? `task-${taskId}-${isDue ? 'due' : '5m'}` : 'test',
+          requireInteraction: true,
+        });
+
+        notif.onclick = () => {
+          window.focus();
+          if (taskId && toggleTaskRef.current && isDue) {
+            toggleTaskRef.current(taskId);
+          }
+          notif.close();
+        };
+      } catch (err) {
+        console.warn('System notification error:', err);
+      }
+    }
+  };
+
+  const triggerTestNotification = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      await requestNotifPermission();
+    }
+    sendNotification({
+      title: '🧪 Thử nghiệm thông báo 💕',
+      body: 'Hệ thống nhắc nhở trước 5 phút và đúng giờ đang hoạt động cực kỳ mượt mà trên máy của bạn!',
+      taskId: null,
+      isDue: false,
+      timeStr: 'Bây giờ',
+    });
+  };
+
   const tasksRef = useRef(tasks);
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
 
   const toggleTaskRef = useRef(null);
 
   useEffect(() => {
-    if (!('Notification' in window)) return;
-    
-    const interval = setInterval(() => {
-      if (Notification.permission !== 'granted') return;
-      
+    const checkTasks = () => {
       const now = new Date();
+      // 0=Mon, 1=Tue, ..., 6=Sun
       const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
       const currentHour = now.getHours();
       const currentMin = now.getMinutes();
-      const currentTimeStr = `${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')}`;
+      const nowTotalMins = currentHour * 60 + currentMin;
+      const todayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 
       tasksRef.current.forEach(t => {
-        if (t.day === currentDay && !t.is_completed && t.time) {
-          const startTime = t.time.split('-')[0].trim();
-          
-          if (startTime === currentTimeStr) {
-            const notifiedKey = `notified_${t.id}_${now.toDateString()}`;
-            if (!sessionStorage.getItem(notifiedKey)) {
-              sessionStorage.setItem(notifiedKey, 'true');
-              
-              const notif = new Notification("⏰ Đến giờ rồi: " + t.title, {
-                body: "Nhấp vào đây để đánh dấu hoàn thành luôn nhé! 💖",
-                icon: '/favicon.ico',
-                requireInteraction: true
-              });
-              
-              notif.onclick = () => {
-                window.focus();
-                if (toggleTaskRef.current) toggleTaskRef.current(t.id);
-                notif.close();
-              };
-            }
+        if (t.day !== currentDay || t.is_completed || !t.time) return;
+
+        // Parse start time "HH:mm" from "HH:mm" or "HH:mm - HH:mm"
+        const startTimeStr = t.time.split('-')[0].trim();
+        const match = startTimeStr.match(/^(\d{1,2}):(\d{2})/);
+        if (!match) return;
+
+        const startHour = parseInt(match[1], 10);
+        const startMin = parseInt(match[2], 10);
+        const startTotalMins = startHour * 60 + startMin;
+        const diffMins = startTotalMins - nowTotalMins;
+
+        // 1. NHẮC TRƯỚC 5 PHÚT (diffMins từ 1 đến 5 phút)
+        if (diffMins > 0 && diffMins <= 5) {
+          const key5m = `sc_notif_5m_${t.id}_${todayKey}`;
+          if (!localStorage.getItem(key5m)) {
+            localStorage.setItem(key5m, 'true');
+            sendNotification({
+              title: `⏳ Sắp đến giờ: ${t.title}`,
+              body: `Còn ${diffMins} phút nữa (${startTimeStr}) là bắt đầu việc rồi! Chuẩn bị nhé 💕`,
+              taskId: t.id,
+              isDue: false,
+              timeStr: startTimeStr,
+            });
+          }
+        }
+
+        // 2. NHẮC ĐÚNG GIỜ (diffMins === 0 hoặc trễ tối đa 1 phút do sleep tab)
+        if (diffMins <= 0 && diffMins >= -1) {
+          const keyDue = `sc_notif_due_${t.id}_${todayKey}`;
+          if (!localStorage.getItem(keyDue)) {
+            localStorage.setItem(keyDue, 'true');
+            sendNotification({
+              title: `⏰ Đến giờ rồi: ${t.title}`,
+              body: `Đã đến giờ bắt đầu (${startTimeStr}). Nhấp vào để hoàn thành nhé! 💖`,
+              taskId: t.id,
+              isDue: true,
+              timeStr: startTimeStr,
+            });
           }
         }
       });
-    }, 15000); // Check every 15s
+    };
+
+    // Check immediately on mount, then poll every 10 seconds
+    checkTasks();
+    const interval = setInterval(checkTasks, 10000);
 
     return () => clearInterval(interval);
   }, []);
@@ -275,12 +478,20 @@ export function AppProvider({ children }) {
   const bothTasks = tasks.filter(t => t.person === 'BOTH').length;
   const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
+  // Combined Wallpapers (Custom uploaded + Presets)
+  const allWallpapers = [...customWallpapers, ...PRESET_WALLPAPERS];
+
   const value = {
     tasks, reviews, activeTab, setActiveTab,
     isOnline: isSupabaseReady,
     totalTasks, completedTasks, bothTasks, progressPct,
     toggleTask, updateTask, addTask, deleteTask, resetWeek,
     addReview, updateReview, deleteReview,
+    wallpaper, setWallpaper,
+    customWallpapers, addCustomWallpaper, deleteCustomWallpaper,
+    WALLPAPERS: allWallpapers,
+    activeNotification, dismissNotification, triggerTestNotification,
+    notifPermission, requestNotifPermission,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

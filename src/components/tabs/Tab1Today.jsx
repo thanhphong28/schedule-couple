@@ -154,6 +154,8 @@ export default function Tab1Today() {
   const completed = dayTasks.filter(t => t.is_completed).length;
   const pct = dayTasks.length > 0 ? Math.round((completed / dayTasks.length) * 100) : 0;
 
+  const scrollTimeoutRef = useRef(null);
+
   // Scroll to a specific day column
   const scrollToDay = (di, behavior = 'smooth') => {
     if (!scrollContainerRef.current) return;
@@ -163,9 +165,11 @@ export default function Tab1Today() {
       isProgrammaticScroll.current = true;
       setSelectedDay(di);
       container.scrollTo({ left: di * dayWidth, behavior });
-      setTimeout(() => {
+      
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = setTimeout(() => {
         isProgrammaticScroll.current = false;
-      }, 350);
+      }, 800);
     }
   };
 
@@ -312,7 +316,7 @@ export default function Tab1Today() {
           <div 
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-x-auto pb-4 pt-2 scrollbar-none snap-x snap-mandatory scroll-smooth flex relative"
+            className="flex-1 overflow-x-auto pb-4 pt-2 scrollbar-none snap-x snap-mandatory flex relative"
           >
             {DAYS.map((day, di) => (
               <div 

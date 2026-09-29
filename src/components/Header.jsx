@@ -7,7 +7,7 @@ export default function Header() {
   const { isOnline } = useApp();
 
   return (
-    <header className="sticky top-0 z-50 w-full mb-2 pt-4 px-2 sm:px-4">
+    <header className="relative w-full mb-2 pt-4 px-2 sm:px-4">
       {/* Container for the whole header area, using a very soft, seamless blur that fades out at the bottom */}
       <div className="absolute top-0 left-0 right-0 h-[180px] bg-gradient-to-b from-black/40 via-black/10 to-transparent pointer-events-none -z-10" />
 

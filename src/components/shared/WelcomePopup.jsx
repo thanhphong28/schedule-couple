@@ -1,5 +1,5 @@
 // components/shared/WelcomePopup.jsx
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../../context/AppContext.jsx';
 import { X, Heart, Sparkles, CheckCircle2 } from 'lucide-react';
@@ -8,27 +8,50 @@ import { getDayIndex } from '../../lib/utils.js';
 
 export function WelcomePopup() {
   const [isOpen, setIsOpen] = useState(false);
-  const [content, setContent] = useState({});
+  const [content, setContent] = useState({ compliment: '', love: '', tasksLeft: 0 });
   const { tasks } = useApp();
 
   useEffect(() => {
-    // Only show once per session
-    if (!sessionStorage.getItem('sc_welcome_shown')) {
-      const dayIdx = getDayIndex();
-      const uncompletedTasks = tasks.filter(t => t.day === dayIdx && !t.is_completed).length;
+    const checkAndShowPopup = () => {
+      // Don't check if already open
+      if (isOpen) return;
+
+      const todayStr = new Date().toDateString();
+      const lastShownDate = localStorage.getItem('sc_welcome_shown_date');
+      const shownThisSession = sessionStorage.getItem('sc_welcome_shown_session');
       
-      setContent({
-        compliment: COMPLIMENTS[Math.floor(Math.random() * COMPLIMENTS.length)],
-        love: LOVE_REMINDERS[Math.floor(Math.random() * LOVE_REMINDERS.length)],
-        tasksLeft: uncompletedTasks
-      });
-      
-      setIsOpen(true);
-    }
-  }, [tasks]);
+      // Show if: (Not shown in this tab session) OR (It's a new day)
+      if (!shownThisSession || lastShownDate !== todayStr) {
+        const dayIdx = getDayIndex();
+        const uncompletedTasks = tasks.filter(t => t.day === dayIdx && !t.is_completed).length;
+        
+        setContent({
+          compliment: COMPLIMENTS[Math.floor(Math.random() * COMPLIMENTS.length)],
+          love: LOVE_REMINDERS[Math.floor(Math.random() * LOVE_REMINDERS.length)],
+          tasksLeft: uncompletedTasks
+        });
+        
+        setIsOpen(true);
+      }
+    };
+
+    // Check immediately on mount (using setTimeout to ensure tasks are loaded if possible, but tasks dependency helps)
+    checkAndShowPopup();
+
+    // Check every time user brings the app back to foreground (from background)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkAndShowPopup();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [tasks, isOpen]);
 
   const handleStart = () => {
-    sessionStorage.setItem('sc_welcome_shown', 'true');
+    sessionStorage.setItem('sc_welcome_shown_session', 'true');
+    localStorage.setItem('sc_welcome_shown_date', new Date().toDateString());
     setIsOpen(false);
     
     // Request notification permission for task reminders

@@ -1,17 +1,26 @@
 // App.jsx
 import { useApp } from './context/AppContext.jsx';
+import { useAuth } from './context/AuthContext.jsx';
 import Header from './components/Header.jsx';
 import Tab1Today from './components/tabs/Tab1Today.jsx';
 import Tab2WeekPlan from './components/tabs/Tab2WeekPlan.jsx';
 import Tab3Dashboard from './components/tabs/Tab3Dashboard.jsx';
+import Tab4Profile from './components/tabs/Tab4Profile.jsx';
+import Tab5Health from './components/tabs/Tab5Health.jsx';
+import AuthScreen from './components/auth/AuthScreen.jsx';
 import { WelcomePopup } from './components/shared/WelcomePopup.jsx';
+import { ToastContainer } from './components/shared/Toast.jsx';
+import { Celebration } from './components/shared/Celebration.jsx';
+import ThemeSystem from './components/theme/ThemeSystem.jsx';
 import { createPortal } from 'react-dom';
-import { CalendarDays, CalendarRange, Sparkles, X } from 'lucide-react';
+import { CalendarDays, CalendarRange, Sparkles, User, HeartPulse, X } from 'lucide-react';
 
 const TABS = [
   { id: 0, icon: CalendarDays, label: 'Hôm Nay', desc: 'Lịch & việc' },
   { id: 1, icon: CalendarRange, label: 'Cả Tuần', desc: 'Kế hoạch' },
   { id: 2, icon: Sparkles, label: 'Thống Kê', desc: 'Nhật ký & số liệu' },
+  { id: 4, icon: HeartPulse, label: 'Chu Kỳ', desc: 'Chu kỳ & Couple Care' },
+  { id: 3, icon: User, label: 'Hồ Sơ', desc: 'Cá nhân & Kết nối' },
 ];
 
 function BottomNav() {
@@ -129,59 +138,31 @@ function AppContent() {
       {/* 0. Real-time In-App Floating Notification Banner */}
       <InAppNotificationBanner />
 
-      {/* 1. Background Layer: Image or Aurora */}
-      {isAurora ? (
-        <div 
-          className="fixed inset-0 pointer-events-none z-0 transition-all duration-700 ease-out"
-          style={{
-            background: `
-              radial-gradient(ellipse 70% 50% at 15% 10%, rgba(244, 63, 94, 0.40) 0%, transparent 65%),
-              radial-gradient(ellipse 65% 45% at 85% 20%, rgba(139, 92, 246, 0.35) 0%, transparent 60%),
-              radial-gradient(ellipse 55% 45% at 10% 60%, rgba(14, 165, 233, 0.25) 0%, transparent 55%),
-              radial-gradient(ellipse 75% 55% at 85% 85%, rgba(251, 113, 133, 0.35) 0%, transparent 65%),
-              #09090b
-            `
-          }}
-        />
-      ) : (
-        <div 
-          className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center transition-all duration-700 ease-out"
-          style={{ 
-            backgroundImage: `url(${currentWp.url})`,
-            backgroundPosition: 'center center'
-          }}
-        />
-      )}
+      {/* GLOBAL THEME ENGINE (Background + Ambient Animations) */}
+      <ThemeSystem />
 
-      {/* 2. Soft Romantic Scrim Overlay (Translucent so wallpaper is clearly visible) */}
-      <div className="fixed inset-0 bg-gradient-to-b from-black/25 via-black/40 to-black/65 pointer-events-none z-0" />
-      
-      {/* 3. Floating subtle star sparkles */}
-      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        <div className="absolute top-[12%] left-[15%] w-1.5 h-1.5 rounded-full bg-white animate-pulse shadow-[0_0_8px_#fff]" />
-        <div className="absolute top-[26%] right-[18%] w-2 h-2 rounded-full bg-rose-300 animate-ping shadow-[0_0_10px_#fb7185]" style={{ animationDuration: '3s' }} />
-        <div className="absolute top-[42%] left-[25%] w-1 h-1 rounded-full bg-sky-300 animate-pulse" />
-        <div className="absolute top-[68%] right-[22%] w-1.5 h-1.5 rounded-full bg-amber-200 animate-pulse" style={{ animationDuration: '4s' }} />
-        <div className="absolute top-[82%] left-[12%] w-2 h-2 rounded-full bg-pink-400 animate-ping shadow-[0_0_10px_#f472b6]" style={{ animationDuration: '5s' }} />
-      </div>
-
-      {/* 4. Main Mobile App Frame */}
       <div className="relative z-10 flex-1 flex flex-col w-full max-w-md md:max-w-xl mx-auto px-0 sm:px-2">
         <WelcomePopup />
+        <Celebration />
         <Header />
 
         <main className="flex-1 w-full pb-28 pt-1">
           {activeTab === 0 && <Tab1Today />}
           {activeTab === 1 && <Tab2WeekPlan />}
           {activeTab === 2 && <Tab3Dashboard />}
+          {activeTab === 4 && <Tab5Health />}
+          {activeTab === 3 && <Tab4Profile />}
         </main>
       </div>
 
       <BottomNav />
+      <ToastContainer />
     </div>
   );
 }
 
 export default function App() {
+  const { user } = useAuth();
+  if (!user) return <AuthScreen />;
   return <AppContent />;
 }

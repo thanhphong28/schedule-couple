@@ -4,266 +4,6 @@ import { Bell, Check, Heart, Image, Loader2, Palette, Trash2, Upload, Wifi, Wifi
 import { useRef, useState } from 'react';
 import { useApp } from '../context/AppContext.jsx';
 import { compressImage } from '../lib/utils.js';
-
-function WallpaperModal({ onClose }) {
-  const { 
-    wallpaper, 
-    setWallpaper, 
-    WALLPAPERS, 
-    customWallpapers, 
-    addCustomWallpaper, 
-    deleteCustomWallpaper 
-  } = useApp();
-
-  const fileInputRef = useRef(null);
-  const [uploading, setUploading] = useState(false);
-
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setUploading(true);
-      const compressedUrl = await compressImage(file, 1280, 1920, 0.82);
-      let cleanName = file.name ? file.name.replace(/\.[^/.]+$/, '').trim() : '';
-      if (!cleanName || /^(image|img[_\-]?\d+|photo)/i.test(cleanName)) {
-        const d = new Date();
-        cleanName = `Kỷ niệm ${d.getDate()}/${d.getMonth() + 1} 💕`;
-      } else {
-        cleanName = cleanName.slice(0, 24);
-      }
-      addCustomWallpaper({ name: cleanName, url: compressedUrl });
-    } catch (err) {
-      console.error('Lỗi upload ảnh:', err);
-      alert('Không thể tải ảnh: ' + (err.message || 'Lỗi không xác định'));
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  const presetList = WALLPAPERS.filter(w => !w.is_custom);
-  const customList = customWallpapers || [];
-
-  const content = (
-    <div className="modal-overlay" onClick={onClose}>
-      <div 
-        className="bottom-sheet flex flex-col"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Drag Handle */}
-        <div className="pt-3 pb-1 flex justify-center flex-shrink-0">
-          <div className="w-12 h-1.5 bg-zinc-600/80 rounded-full" />
-        </div>
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 flex-shrink-0">
-          <div>
-            <h3 className="text-base font-extrabold text-white flex items-center gap-2">
-              <span>🎨</span>
-              <span>Không gian lãng mạn</span>
-            </h3>
-            <p className="text-[11px] text-zinc-400 mt-0.5">Chọn hoặc tải ảnh từ điện thoại của hai đứa</p>
-          </div>
-          <button 
-            type="button" 
-            onClick={onClose} 
-            className="p-1.5 text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-colors active:scale-95"
-            aria-label="Đóng"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Modal Scroll Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[65dvh]">
-          
-          {/* UPLOAD BUTTON CARD */}
-          <div>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              accept="image/*" 
-              onChange={handleUpload} 
-              className="hidden" 
-            />
-            
-            <button
-              type="button"
-              disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full p-3.5 rounded-2xl border-2 border-dashed border-rose-500/40 hover:border-rose-400 bg-rose-500/10 hover:bg-rose-500/15 flex items-center justify-center gap-3 transition-all active:scale-[0.98] group"
-            >
-              {uploading ? (
-                <>
-                  <Loader2 size={20} className="animate-spin text-rose-400" />
-                  <span className="text-xs font-bold text-rose-200">Đang nén & lưu ảnh của hai đứa... ✨</span>
-                </>
-              ) : (
-                <>
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center text-white shadow-md shadow-rose-500/30 group-hover:scale-105 transition-transform flex-shrink-0">
-                    <Upload size={18} strokeWidth={2.5} />
-                  </div>
-                  <div className="text-left">
-                    <div className="text-xs font-black text-white flex items-center gap-1.5">
-                      <span>📸 Tải ảnh từ điện thoại lên</span>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] bg-rose-500/30 text-rose-200 font-extrabold uppercase">Mới</span>
-                    </div>
-                    <div className="text-[10px] text-zinc-300 mt-0.5">
-                      Chọn ảnh chụp chung, đi chơi hoặc kỷ niệm từ thư viện
-                    </div>
-                  </div>
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* SECTION 1: CUSTOM WALLPAPERS (If any) */}
-          {customList.length > 0 && (
-            <div className="space-y-2">
-              <div className="text-xs font-extrabold text-white flex items-center gap-1.5 px-1">
-                <span>💕</span>
-                <span>Ảnh của hai đứa ({customList.length})</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2.5">
-                {customList.map((wp) => {
-                  const isActive = wp.id === wallpaper;
-                  return (
-                    <div
-                      key={wp.id}
-                      onClick={() => setWallpaper(wp.id)}
-                      className={`group relative rounded-2xl overflow-hidden border p-2.5 text-left cursor-pointer transition-all active:scale-95 flex flex-col justify-end min-h-[115px] ${
-                        isActive
-                          ? 'border-rose-400 ring-2 ring-rose-500/60 shadow-[0_0_20px_rgba(244,63,94,0.4)]'
-                          : 'border-white/10 hover:border-white/30 bg-zinc-900/60'
-                      }`}
-                    >
-                      {/* Image Thumbnail */}
-                      <div 
-                        className="absolute inset-0 -z-10 bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
-                        style={{ backgroundImage: `url(${wp.url})` }}
-                      />
-                      {/* Gradient Scrim */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent -z-10" />
-
-                      {/* Active Checkmark */}
-                      {isActive && (
-                        <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-lg">
-                          <Check size={14} strokeWidth={3} />
-                        </div>
-                      )}
-
-                      {/* Delete Custom Photo Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm('Xóa ảnh nền này khỏi danh sách?')) {
-                            deleteCustomWallpaper(wp.id);
-                          }
-                        }}
-                        className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 hover:bg-rose-500 text-zinc-300 hover:text-white transition-colors backdrop-blur-sm"
-                        title="Xóa ảnh"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-
-                      {/* Title */}
-                      <div>
-                        <div className="text-xs font-black text-white drop-shadow-md truncate">
-                          {wp.name}
-                        </div>
-                        <div className="text-[9px] text-zinc-300 font-medium drop-shadow-sm mt-0.5">
-                          Tải lên từ máy
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* SECTION 2: PRESET WALLPAPERS */}
-          <div className="space-y-2">
-            <div className="text-xs font-extrabold text-white flex items-center gap-1.5 px-1">
-              <span>✨</span>
-              <span>Bộ sưu tập mẫu lãng mạn</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2.5">
-              {presetList.map((wp) => {
-                const isActive = wp.id === wallpaper;
-                const isAurora = wp.url === 'aurora';
-
-                return (
-                  <button
-                    key={wp.id}
-                    type="button"
-                    onClick={() => setWallpaper(wp.id)}
-                    className={`group relative rounded-2xl overflow-hidden border p-2.5 text-left transition-all active:scale-95 flex flex-col justify-end min-h-[110px] ${
-                      isActive
-                        ? 'border-rose-400 ring-2 ring-rose-500/60 shadow-[0_0_20px_rgba(244,63,94,0.4)]'
-                        : 'border-white/10 hover:border-white/30 bg-zinc-900/60'
-                    }`}
-                  >
-                    {/* Thumbnail Background */}
-                    {isAurora ? (
-                      <div 
-                        className="absolute inset-0 -z-10"
-                        style={{
-                          background: 'radial-gradient(circle at 30% 30%, #f43f5e 0%, #8b5cf6 50%, #09090b 100%)'
-                        }}
-                      />
-                    ) : (
-                      <div 
-                        className="absolute inset-0 -z-10 bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
-                        style={{ backgroundImage: `url(${wp.url})` }}
-                      />
-                    )}
-
-                    {/* Scrim Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent -z-10" />
-
-                    {/* Active Checkmark */}
-                    {isActive && (
-                      <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-lg">
-                        <Check size={14} strokeWidth={3} />
-                      </div>
-                    )}
-
-                    {/* Title & Desc */}
-                    <div>
-                      <div className="text-xs font-black text-white drop-shadow-md flex items-center gap-1">
-                        {wp.name}
-                      </div>
-                      <div className="text-[10px] text-zinc-300/90 font-medium drop-shadow-sm mt-0.5">
-                        {wp.desc}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Footer Actions */}
-        <div className="p-4 border-t border-white/10 bg-zinc-950 flex justify-end pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] flex-shrink-0">
-          <button 
-            type="button" 
-            className="btn-primary w-full py-3" 
-            onClick={onClose}
-          >
-            Đã chọn xong ✨
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
-}
-
 function NotificationModal({ onClose }) {
   const { 
     notifPermission, 
@@ -429,28 +169,56 @@ function NotificationModal({ onClose }) {
   return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 }
 
+import { useAuth } from '../context/AuthContext.jsx';
+
 export default function Header() {
   const { isOnline } = useApp();
-  const [showThemeModal, setShowThemeModal] = useState(false);
+  const { user, partner } = useAuth();
   const [showNotifModal, setShowNotifModal] = useState(false);
 
   return (
     <header className="w-full pt-3 px-3 sm:px-4 pb-2">
       {/* Top Mobile Bar */}
       <div className="flex items-center justify-between gap-2 py-1.5 px-3 rounded-[20px] glass-panel border border-white/10 shadow-lg">
-        {/* Couple Pill */}
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500/15 border border-rose-500/25 text-xs font-black text-rose-200">
-            <span>👧</span>
-            <span className="text-[11px] font-extrabold text-rose-300">Thi</span>
-            <Heart size={11} fill="currentColor" className="text-rose-400 animate-heartbeat mx-0.5" />
-            <span>👦</span>
-            <span className="text-[11px] font-extrabold text-sky-300">Phong</span>
-          </div>
+        {/* Couple Info */}
+        <div className="flex items-center gap-2">
+          {partner ? (
+            <div className="flex items-center">
+              {/* User 1 */}
+              <div className="w-8 h-8 rounded-full border border-rose-400 bg-zinc-800 overflow-hidden flex items-center justify-center relative z-10 text-sm shadow-[0_0_10px_rgba(244,63,94,0.3)]">
+                {user?.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" alt="User" /> : (user?.gender === 'MALE' ? '👦' : '👧')}
+              </div>
+              {/* Connecting Heart */}
+              <div className="w-5 h-5 rounded-full bg-rose-500/10 border border-rose-500/40 flex items-center justify-center -mx-1.5 z-20 backdrop-blur-md">
+                <Heart size={10} className="text-rose-400 animate-pulse drop-shadow-[0_0_5px_rgba(244,63,94,1)]" fill="currentColor" />
+              </div>
+              {/* User 2 */}
+              <div className="w-8 h-8 rounded-full border border-sky-400 bg-zinc-800 overflow-hidden flex items-center justify-center relative z-10 text-sm shadow-[0_0_10px_rgba(56,189,248,0.3)]">
+                {partner?.avatar_url ? <img src={partner.avatar_url} className="w-full h-full object-cover" alt="Partner" /> : (partner?.gender === 'MALE' ? '👦' : '👧')}
+              </div>
+              <div className="flex flex-col ml-2">
+                <span className="text-[9px] font-black uppercase text-rose-300 tracking-wider">Không gian chung</span>
+                <span className="text-[11px] font-extrabold text-white leading-tight truncate max-w-[120px]">
+                  {user?.display_name} & {partner?.display_name}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full border border-white/20 bg-zinc-800 overflow-hidden flex items-center justify-center text-sm shadow-md">
+                {user?.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" alt="User" /> : (user?.gender === 'MALE' ? '👦' : '👧')}
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black uppercase text-zinc-400 tracking-wider">Xin chào</span>
+                <span className="text-xs font-bold text-white leading-tight truncate max-w-[120px]">{user?.display_name || 'Bạn'}</span>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Right Info: Notifications, Theme Switcher & Live Status */}
+        {/* Right Info: Notifications & Live Status */}
         <div className="flex items-center gap-1.5">
+
           {/* Notification Button */}
           <button
             type="button"
@@ -459,17 +227,6 @@ export default function Header() {
             title="Cài đặt & thử thông báo nhắc việc"
           >
             <Bell size={13} className="text-amber-300" />
-          </button>
-
-          {/* Theme Palette Button */}
-          <button
-            type="button"
-            onClick={() => setShowThemeModal(true)}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold tracking-wide uppercase border border-white/15 bg-white/10 text-white hover:bg-white/20 transition-all active:scale-95 shadow-sm"
-            title="Đổi hoặc tải hình nền"
-          >
-            <Palette size={11} className="text-rose-300" />
-            <span>Đổi nền</span>
           </button>
 
           {/* Live Sync Badge */}
@@ -500,10 +257,6 @@ export default function Header() {
           Cùng nhau lên kế hoạch, xây dựng thói quen và tận hưởng từng khoảnh khắc 💕
         </p>
       </div>
-
-      {showThemeModal && (
-        <WallpaperModal onClose={() => setShowThemeModal(false)} />
-      )}
 
       {showNotifModal && (
         <NotificationModal onClose={() => setShowNotifModal(false)} />

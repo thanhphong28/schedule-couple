@@ -2,6 +2,7 @@
 import { Calendar, CheckCircle2, ChevronLeft, ChevronRight, Clock, Plus, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import { CATEGORIES, DAYS, DAYS_SHORT_EN, PERSONS } from '../../data/initialTasks.js';
 import { getDayIndex } from '../../lib/utils.js';
 import { TaskCard, TaskModal } from '../shared/TaskCard.jsx';
@@ -44,6 +45,14 @@ function parseTimeRange(t) {
 
 export default function Tab1Today() {
   const { tasks } = useApp();
+  const { user, partner } = useAuth();
+  
+  // Resolve female and male names
+  const femaleUser = user?.gender === 'FEMALE' ? user : (partner?.gender === 'FEMALE' ? partner : null);
+  const maleUser = user?.gender === 'MALE' ? user : (partner?.gender === 'MALE' ? partner : null);
+  const femaleName = femaleUser?.display_name || 'Bạn Nữ';
+  const maleName = maleUser?.display_name || 'Bạn Nam';
+
   const todayIdx = getDayIndex();
   const [selectedDay, setSelectedDay] = useState(todayIdx);
   const [viewMode, setViewMode] = useState('timeline'); // 'timeline' | 'list'
@@ -245,19 +254,19 @@ export default function Tab1Today() {
           onTouchEnd={handleTouchEnd}
           className="glass-panel rounded-[28px] overflow-hidden border border-white/10 shadow-2xl relative"
         >
-          {/* Header of Timeline: Thi vs Phong Column headers */}
+          {/* Header of Timeline: Column headers */}
           <div className="flex border-b border-white/10 bg-zinc-950/60 sticky top-0 z-20 backdrop-blur-xl">
             {/* Time label column space */}
             <div className="w-[50px] flex-shrink-0 text-center py-2 text-[10px] font-black uppercase tracking-wider text-zinc-400 border-r border-white/10">
               Giờ
             </div>
-            {/* Thi Column */}
+            {/* Female Column */}
             <div className="flex-1 py-2 text-center text-xs font-black uppercase tracking-wider text-pink-300 bg-pink-500/10 border-r border-white/10 flex items-center justify-center gap-1.5">
-              <span>👧</span> Thi
+              <span>👧</span> {femaleName}
             </div>
-            {/* Phong Column */}
+            {/* Male Column */}
             <div className="flex-1 py-2 text-center text-xs font-black uppercase tracking-wider text-sky-300 bg-sky-500/10 flex items-center justify-center gap-1.5">
-              <span>👦</span> Phong
+              <span>👦</span> {maleName}
             </div>
           </div>
 
@@ -316,9 +325,9 @@ export default function Tab1Today() {
                 // Column placement
                 let left = '0%';
                 let width = '100%';
-                if (t.person === 'THI') {
+                if (t.person === 'FEMALE') {
                   width = '50%';
-                } else if (t.person === 'PHONG') {
+                } else if (t.person === 'MALE') {
                   left = '50%';
                   width = '50%';
                 }

@@ -3,36 +3,46 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { getInitialTasks } from '../data/initialTasks.js';
 import { isSupabaseReady, supabase } from '../lib/supabase.js';
 import { nanoid, playNotificationChime } from '../lib/utils.js';
+import { useAuth } from './AuthContext.jsx';
+import { showToast } from '../components/shared/Toast.jsx';
 
 const AppContext = createContext(null);
 
 const LS_TASKS = 'sc_tasks_v2';
 const LS_REVIEWS = 'sc_reviews_v2';
 const LS_CUSTOM_WP = 'sc_custom_wallpapers_v1';
+const LS_THEME = 'sc_theme_v1';
 
 function lsGet(key) {
   try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
 }
 function lsSet(key, val) {
-  localStorage.setItem(key, JSON.stringify(val));
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+  } catch (err) {
+    console.warn('lsSet failed (QuotaExceeded?):', err);
+  }
 }
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
-async function sbGetTasks() {
+async function sbGetTasks(coupleId) {
+  if (!coupleId) return [];
   const { data, error } = await supabase
-    .from('tasks').select('*').order('sort_order', { ascending: true });
+    .from('tasks').select('*').eq('couple_id', coupleId).order('sort_order', { ascending: true });
   if (error) throw error;
   return data;
 }
-async function sbGetReviews() {
+async function sbGetReviews(coupleId) {
+  if (!coupleId) return [];
   const { data, error } = await supabase
-    .from('weekly_reviews').select('*').order('created_at', { ascending: false });
+    .from('weekly_reviews').select('*').eq('couple_id', coupleId).order('created_at', { ascending: false });
   if (error) throw error;
   return data;
 }
-async function sbGetWallpapers() {
+async function sbGetWallpapers(coupleId) {
+  if (!coupleId) return [];
   const { data, error } = await supabase
-    .from('wallpapers').select('*').order('created_at', { ascending: false });
+    .from('wallpapers').select('*').eq('couple_id', coupleId).order('created_at', { ascending: false });
   if (error) throw error;
   return data;
 }
@@ -67,23 +77,49 @@ export const PRESET_WALLPAPERS = [
 ];
 
 export function AppProvider({ children }) {
+  const { user, couple } = useAuth();
   const [tasks, setTasksRaw] = useState(() => {
-    const saved = lsGet(LS_TASKS);
-    return saved && saved.length > 0 ? saved : getInitialTasks();
+    return lsGet(LS_TASKS) || [];
   });
   const [reviews, setReviewsRaw] = useState(() => lsGet(LS_REVIEWS) || []);
   const [activeTab, setActiveTab] = useState(0);
   const [synced, setSynced] = useState(false); // true after first Supabase load
+  
+  // Theme state
+  const [themeId, setThemeIdRaw] = useState(() => {
+    return user?.theme_id || localStorage.getItem(LS_THEME) || 'ocean';
+  });
+  
+  // Wallpaper state
   const [wallpaper, setWallpaperRaw] = useState(() => {
-    return localStorage.getItem('sc_wallpaper') || 'couple_sunset';
+    return user?.wallpaper_id || localStorage.getItem('sc_wallpaper') || null;
   });
   const [customWallpapers, setCustomWallpapers] = useState(() => {
     return lsGet(LS_CUSTOM_WP) || [];
   });
 
+  function setThemeId(id) {
+    setThemeIdRaw(id);
+    localStorage.setItem(LS_THEME, id);
+    if (user?.id && isSupabaseReady) {
+      supabase.from('users').update({ theme_id: id }).eq('id', user.id).then(({error}) => {
+        if (error) console.error('Failed to save theme to Supabase:', error.message);
+      });
+    }
+  }
+
   function setWallpaper(id) {
     setWallpaperRaw(id);
-    localStorage.setItem('sc_wallpaper', id);
+    if (id) {
+      localStorage.setItem('sc_wallpaper', id);
+    } else {
+      localStorage.removeItem('sc_wallpaper');
+    }
+    if (user?.id && isSupabaseReady) {
+      supabase.from('users').update({ wallpaper_id: id }).eq('id', user.id).then(({error}) => {
+        if (error) console.error('Failed to save wallpaper to Supabase:', error.message);
+      });
+    }
   }
 
   // ── Persist to localStorage ────────────────────────────────────────────────
@@ -98,6 +134,18 @@ export function AppProvider({ children }) {
 
   // ── On mount: load from Supabase (if configured) ──────────────────────────
   useEffect(() => {
+    // Clear localStorage on mount if couple changes (or logs out)
+    const currentCoupleId = couple?.id || 'none';
+    const lastCoupleId = localStorage.getItem('sc_last_couple_id');
+    
+    if (lastCoupleId !== currentCoupleId) {
+      localStorage.removeItem(LS_TASKS);
+      localStorage.removeItem(LS_REVIEWS);
+      setTasksRaw([]);
+      setReviewsRaw([]);
+      localStorage.setItem('sc_last_couple_id', currentCoupleId);
+    }
+
     if (!isSupabaseReady) {
       // Cross-tab sync via storage event
       const handler = (e) => {
@@ -116,9 +164,11 @@ export function AppProvider({ children }) {
     }
 
     // Load initial data from Supabase
-    Promise.all([sbGetTasks(), sbGetReviews(), sbGetWallpapers().catch(() => [])]).then(([t, r, wps]) => {
-      if (t && t.length > 0) setTasks(t); // prefer remote data
-      if (r && r.length > 0) setReviews(r);
+    if (!couple?.id) return;
+    
+    Promise.all([sbGetTasks(couple.id), sbGetReviews(couple.id), sbGetWallpapers(couple.id).catch(() => [])]).then(([t, r, wps]) => {
+      setTasks(t || []);
+      setReviews(r || []);
       if (wps && wps.length > 0) {
         setCustomWallpapers(wps);
         lsSet(LS_CUSTOM_WP, wps);
@@ -132,22 +182,30 @@ export function AppProvider({ children }) {
     // Real-time subscriptions
     const taskSub = supabase
       .channel('tasks-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-        sbGetTasks().then(setTasks).catch(console.error);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `couple_id=eq.${couple.id}` }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          // Check if this task is genuinely new (not created locally by us just now)
+          const isNewForMe = !tasks.some(t => t.id === payload.new.id);
+          if (isNewForMe) {
+            playNotificationChime();
+            showToast('Nửa kia vừa thêm một công việc mới kìa! 📝', 'success');
+          }
+        }
+        sbGetTasks(couple.id).then(setTasks).catch(console.error);
       })
       .subscribe();
 
     const reviewSub = supabase
       .channel('reviews-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_reviews' }, () => {
-        sbGetReviews().then(setReviews).catch(console.error);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_reviews', filter: `couple_id=eq.${couple.id}` }, () => {
+        sbGetReviews(couple.id).then(setReviews).catch(console.error);
       })
       .subscribe();
 
     const wpSub = supabase
       .channel('wallpapers-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallpapers' }, () => {
-        sbGetWallpapers().then(wps => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallpapers', filter: `couple_id=eq.${couple.id}` }, () => {
+        sbGetWallpapers(couple.id).then(wps => {
           if (wps) {
             setCustomWallpapers(wps);
             lsSet(LS_CUSTOM_WP, wps);
@@ -156,12 +214,28 @@ export function AppProvider({ children }) {
       })
       .subscribe();
 
+    const userSub = supabase
+      .channel('user-settings-rt')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${user?.id}` }, (payload) => {
+        if (payload.new.theme_id) {
+          setThemeIdRaw(payload.new.theme_id);
+          localStorage.setItem(LS_THEME, payload.new.theme_id);
+        }
+        if (payload.new.wallpaper_id !== undefined) {
+          setWallpaperRaw(payload.new.wallpaper_id);
+          if (payload.new.wallpaper_id) localStorage.setItem('sc_wallpaper', payload.new.wallpaper_id);
+          else localStorage.removeItem('sc_wallpaper');
+        }
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(taskSub);
       supabase.removeChannel(reviewSub);
       supabase.removeChannel(wpSub);
+      supabase.removeChannel(userSub);
     };
-  }, []);
+  }, [couple, user]);
 
   // ── Custom Wallpaper operations ──────────────────────────────────────────
   function addCustomWallpaper({ id, name, url }) {
@@ -170,6 +244,7 @@ export function AppProvider({ children }) {
       name: name || 'Ảnh kỷ niệm 💕',
       url,
       is_custom: true,
+      couple_id: couple?.id,
       created_at: new Date().toISOString(),
     };
     setCustomWallpapers(prev => {
@@ -189,7 +264,7 @@ export function AppProvider({ children }) {
       return next;
     });
     if (wallpaper === id) {
-      setWallpaper('couple_sunset');
+      setWallpaper(null); // Reset to theme default if the deleted one was active
     }
     sbDeleteWallpaper(id);
   }
@@ -410,6 +485,7 @@ export function AppProvider({ children }) {
       is_completed: false,
       status: 'TODO',
       sort_order: tasks.length + 1,
+      couple_id: couple?.id,
       ...task,
     };
     setTasks(prev => [...prev, newTask]);
@@ -435,6 +511,7 @@ export function AppProvider({ children }) {
       good_things: '',
       improve_things: '',
       next_plan: '',
+      couple_id: couple?.id,
       created_at: new Date().toISOString(),
     };
     addReview(review);
@@ -452,7 +529,7 @@ export function AppProvider({ children }) {
 
   // ── Review operations ──────────────────────────────────────────────────────
   function addReview(review) {
-    const r = { id: nanoid(), created_at: new Date().toISOString(), ...review };
+    const r = { id: nanoid(), couple_id: couple?.id, created_at: new Date().toISOString(), ...review };
     setReviews(prev => [r, ...prev]);
     sbUpsertReview(r);
     return r;
@@ -488,6 +565,7 @@ export function AppProvider({ children }) {
     toggleTask, updateTask, addTask, deleteTask, resetWeek,
     addReview, updateReview, deleteReview,
     wallpaper, setWallpaper,
+    themeId, setThemeId,
     customWallpapers, addCustomWallpaper, deleteCustomWallpaper,
     WALLPAPERS: allWallpapers,
     activeNotification, dismissNotification, triggerTestNotification,

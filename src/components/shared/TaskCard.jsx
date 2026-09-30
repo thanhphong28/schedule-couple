@@ -37,45 +37,44 @@ export function TaskCard({ task, showDay = false, onEdit }) {
       />
 
       {/* Checkbox (Touch Target >= 44px hit area) */}
-      <div className="pl-1 pt-0.5 flex-shrink-0">
+      <div className="flex-shrink-0 pt-1 pr-2">
         <button
           type="button"
           onClick={handleToggle}
-          className={`custom-checkbox ${task.is_completed ? 'checked' : ''} ${ripple ? 'scale-110' : ''}`}
+          className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
+            task.is_completed 
+              ? 'bg-emerald-500 border-emerald-500 scale-95' 
+              : 'border-zinc-500 hover:border-zinc-400 bg-black/20'
+          } ${ripple ? 'scale-110 ring-4 ring-emerald-500/30' : ''}`}
           aria-label={task.is_completed ? 'Bỏ hoàn thành' : 'Đánh dấu hoàn thành'}
         >
-          {task.is_completed && <Check size={16} className="text-white" strokeWidth={3.5} />}
+          {task.is_completed && <Check size={16} className="text-white" strokeWidth={4} />}
         </button>
       </div>
 
       {/* Main Info */}
-      <div className="flex-1 min-w-0 pr-1">
-        {/* Meta info: Time & Day */}
-        <div className="flex items-center gap-2 flex-wrap mb-1">
-          {task.time && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-300 bg-rose-500/15 border border-rose-500/25 px-2 py-0.5 rounded-md">
-              <Clock size={11} strokeWidth={2.5} /> {task.time}
-            </span>
-          )}
-          {showDay && (
-            <span className="text-[11px] font-bold text-zinc-300 uppercase tracking-wider">
-              {DAYS[task.day]}
-            </span>
-          )}
-        </div>
-
+      <div className="flex-1 min-w-0 pr-1 flex flex-col justify-center">
         {/* Task Title */}
         <h4 className={`text-sm font-bold leading-snug mb-2 transition-all ${
-          task.is_completed ? 'line-through text-zinc-400 font-medium' : 'text-white'
+          task.is_completed ? 'line-through text-zinc-500 font-medium' : 'text-zinc-100'
         }`}>
           {task.title}
         </h4>
 
-        {/* Badges */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        {/* Badges / Meta info */}
+        <div className={`flex flex-wrap items-center gap-2 transition-opacity ${task.is_completed ? 'opacity-50' : 'opacity-100'}`}>
+          {task.time && (
+            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-rose-300 bg-rose-500/15 border border-rose-500/20 px-2 py-0.5 rounded-full">
+              <Clock size={10} strokeWidth={3} /> {task.time}
+            </span>
+          )}
+          {showDay && (
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+              {DAYS[task.day]}
+            </span>
+          )}
           <PersonBadge person={task.person} />
           <CategoryBadge category={task.category} />
-          <PriorityBadge priority={task.priority} />
         </div>
       </div>
 

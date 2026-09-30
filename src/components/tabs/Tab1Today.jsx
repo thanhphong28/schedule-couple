@@ -46,7 +46,7 @@ function getLastName(fullName) {
 }
 
 export default function Tab1Today() {
-  const { tasks } = useApp();
+  const { tasks, synced } = useApp();
   const { user, partner } = useAuth();
   
   // Resolve female and male names
@@ -310,6 +310,14 @@ export default function Tab1Today() {
           <div className="relative overflow-y-auto max-h-[65dvh] scrollbar-none pb-4">
             {(() => {
               if (dayTasks.length === 0) {
+                if (!synced) {
+                  return (
+                    <div className="py-12 flex flex-col items-center justify-center text-zinc-400">
+                       <div className="w-5 h-5 border-2 border-rose-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+                       <div className="text-[11px] font-bold animate-pulse">Đang tải lịch trình...</div>
+                    </div>
+                  );
+                }
                 return (
                   <div className="py-12 text-center text-zinc-400 text-sm">
                     Không có công việc nào trong ngày
@@ -499,15 +507,24 @@ export default function Tab1Today() {
           {/* Task List Rendering */}
           {filteredDayTasks.length === 0 ? (
             <div className="glass-panel rounded-3xl p-8 text-center border-white/10 mt-4 shadow-lg">
-              <div className="text-4xl mb-3 animate-bounce-subtle">
-                {personFilter === 'FEMALE' ? '👧' : personFilter === 'MALE' ? '👦' : '🌸'}
-              </div>
-              <p className="text-sm font-bold text-zinc-200">
-                {personFilter === 'FEMALE' ? `${femaleName} chưa có việc cần làm` : 
-                 personFilter === 'MALE' ? `${maleName} chưa có việc cần làm` : 
-                 'Không có công việc nào cho ngày này'}
-              </p>
-              <p className="text-xs text-zinc-400 mt-1.5">Tận hưởng thời gian nghỉ ngơi nhé!</p>
+              {!synced ? (
+                <div className="flex flex-col items-center justify-center">
+                  <div className="w-6 h-6 border-2 border-rose-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+                  <p className="text-sm font-bold text-zinc-200 animate-pulse">Đang tải dữ liệu...</p>
+                </div>
+              ) : (
+                <>
+                  <div className="text-4xl mb-3 animate-bounce-subtle">
+                    {personFilter === 'FEMALE' ? '👧' : personFilter === 'MALE' ? '👦' : '🌸'}
+                  </div>
+                  <p className="text-sm font-bold text-zinc-200">
+                    {personFilter === 'FEMALE' ? `${femaleName} chưa có việc cần làm` : 
+                     personFilter === 'MALE' ? `${maleName} chưa có việc cần làm` : 
+                     'Không có công việc nào cho ngày này'}
+                  </p>
+                  <p className="text-xs text-zinc-400 mt-1.5">Tận hưởng thời gian nghỉ ngơi nhé!</p>
+                </>
+              )}
             </div>
           ) : (
             <div className="space-y-2.5 pb-20">

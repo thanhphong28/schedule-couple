@@ -56,20 +56,52 @@ export function AuthProvider({ children }) {
     try {
       // Fetch latest user data
       const { data: freshUser, error: userErr } = await supabase.from('users').select('*').eq('id', user.id).single();
-      if (userErr || !freshUser) return logout();
+      if (userErr) {
+        if (userErr.code === 'PGRST116') {
+          return logout(); // User deleted
+        }
+        return; // Network error, keep cached data
+      }
+      if (!freshUser) return logout();
+      
+      let activeCoupleId = freshUser.couple_id;
+      if (!activeCoupleId) {
+        const { data: missingCouples } = await supabase
+          .from('couples')
+          .select('id')
+          .or(`partner1_id.eq.${freshUser.id},partner2_id.eq.${freshUser.id}`)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (missingCouples && missingCouples.length > 0) {
+          activeCoupleId = missingCouples[0].id;
+          await supabase.from('users').update({ couple_id: activeCoupleId }).eq('id', freshUser.id);
+          freshUser.couple_id = activeCoupleId;
+        }
+      }
       
       setUser(freshUser);
 
-      if (freshUser.couple_id) {
-        const { data: coupleData } = await supabase.from('couples').select('*').eq('id', freshUser.couple_id).single();
+      if (activeCoupleId) {
+        const { data: coupleData, error: coupleErr } = await supabase.from('couples').select('*').eq('id', activeCoupleId).single();
         if (coupleData) {
           setCouple(coupleData);
           const partnerId = coupleData.partner1_id === freshUser.id ? coupleData.partner2_id : coupleData.partner1_id;
-          if (partnerId) {
+          if (partnerId && partnerId !== freshUser.id) {
             const { data: partnerData } = await supabase.from('users').select('*').eq('id', partnerId).single();
             if (partnerData) setPartner(partnerData);
+          } else if (partnerId === freshUser.id) {
+            // User is connected to themselves, this shouldn't happen, clear partner
+            setPartner(null);
           }
+        } else {
+          // Couple row was deleted!
+          setCouple(null);
+          setPartner(null);
+          await supabase.from('users').update({ couple_id: null }).eq('id', freshUser.id);
         }
+      } else {
+        setCouple(null);
+        setPartner(null);
       }
     } catch (e) {
       console.error(e);
@@ -81,13 +113,13 @@ export function AuthProvider({ children }) {
     refreshAuth(); // Auto sync on load
   }, []);
 
-  // Real-time listener for connection
+  // Real-time listener for connection and user updates
   useEffect(() => {
-    if (user && !couple) {
-      const channel = supabase.channel('user-couple-sync')
+    if (user?.id) {
+      const channel = supabase.channel(`user-sync-${user.id}`)
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${user.id}` }, (payload) => {
-           if (payload.new.couple_id && !user.couple_id) {
-              refreshAuth();
+           refreshAuth();
+           if (payload.new.couple_id && (!payload.old || !payload.old.couple_id)) {
               window.dispatchEvent(new CustomEvent('show-celebration'));
            }
         })
@@ -97,12 +129,26 @@ export function AuthProvider({ children }) {
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'invitations', filter: `sender_id=eq.${user.id}` }, (payload) => {
            if (payload.new.status === 'ACCEPTED') {
               showToast('🎉 Người ấy đã đồng ý kết nối! Giao diện mới đã được mở khóa.', 'success');
+              refreshAuth();
+              window.dispatchEvent(new CustomEvent('show-celebration'));
            }
         })
         .subscribe();
       return () => supabase.removeChannel(channel);
     }
-  }, [user, couple]);
+  }, [user?.id, user?.username]);
+
+  // Real-time listener for partner updates (avatar, name, etc.)
+  useEffect(() => {
+    if (partner?.id) {
+      const channel = supabase.channel(`partner-sync-${partner.id}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${partner.id}` }, (payload) => {
+           refreshAuth();
+        })
+        .subscribe();
+      return () => supabase.removeChannel(channel);
+    }
+  }, [partner?.id]);
 
   const login = async (username, password) => {
     if (!isSupabaseReady) throw new Error("Chưa kết nối CSDL");
@@ -118,34 +164,62 @@ export function AuthProvider({ children }) {
     if (!users || users.length === 0) throw new Error("Tài khoản hoặc mật khẩu không đúng.");
 
     const loggedInUser = users[0];
+    
+    let activeCoupleId = loggedInUser.couple_id;
+    if (!activeCoupleId) {
+      const { data: missingCouples } = await supabase
+        .from('couples')
+        .select('id')
+        .or(`partner1_id.eq.${loggedInUser.id},partner2_id.eq.${loggedInUser.id}`)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (missingCouples && missingCouples.length > 0) {
+        activeCoupleId = missingCouples[0].id;
+        await supabase.from('users').update({ couple_id: activeCoupleId }).eq('id', loggedInUser.id);
+        loggedInUser.couple_id = activeCoupleId;
+      }
+    }
+    
     setUser(loggedInUser);
 
     // Tìm couple (nếu đã kết nối)
     // Người dùng chỉ có couple_id nếu họ đã thực sự kết nối thông qua Tab3Profile
-    const { data: coupleData, error: coupleError } = await supabase
-      .from('couples')
-      .select('*')
-      .eq('id', loggedInUser.couple_id)
-      .single();
-      
-    if (!coupleError && coupleData) {
-      setCouple(coupleData);
+    if (activeCoupleId) {
+      const { data: coupleData, error: coupleError } = await supabase
+        .from('couples')
+        .select('*')
+        .eq('id', activeCoupleId)
+        .single();
+        
+      if (!coupleError && coupleData) {
+        setCouple(coupleData);
 
-      // Tìm partner
-      const partnerId = coupleData.partner1_id === loggedInUser.id 
-        ? coupleData.partner2_id 
-        : coupleData.partner1_id;
+        // Tìm partner
+        const partnerId = coupleData.partner1_id === loggedInUser.id 
+          ? coupleData.partner2_id 
+          : coupleData.partner1_id;
 
-      if (partnerId) {
-        const { data: partnerData } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', partnerId)
-          .single();
-        if (partnerData) {
-          setPartner(partnerData);
+        if (partnerId && partnerId !== loggedInUser.id) {
+          const { data: partnerData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', partnerId)
+            .single();
+          if (partnerData) {
+            setPartner(partnerData);
+          }
+        } else if (partnerId === loggedInUser.id) {
+          setPartner(null);
         }
+      } else {
+        // Couple not found
+        setCouple(null);
+        setPartner(null);
+        await supabase.from('users').update({ couple_id: null }).eq('id', loggedInUser.id);
       }
+    } else {
+      setCouple(null);
+      setPartner(null);
     }
     
     return true;
@@ -155,8 +229,8 @@ export function AuthProvider({ children }) {
     if (!isSupabaseReady) throw new Error("Chưa kết nối CSDL");
     
     // 1. Kiểm tra tài khoản tồn tại chưa
-    const { data: existingUser } = await supabase.from('users').select('id').eq('username', username).maybeSingle();
-    if (existingUser) {
+    const { data: existingUsers } = await supabase.from('users').select('id').eq('username', username).limit(1);
+    if (existingUsers && existingUsers.length > 0) {
       throw new Error("Tên đăng nhập đã tồn tại!");
     }
 

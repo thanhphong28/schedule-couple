@@ -60,6 +60,9 @@ export default function Tab4Profile() {
     if (!inviteUsername.trim() || !inviteCode.trim()) {
       return showToast('Nhập thiếu thông tin rồi người ơi! 🥺', 'error');
     }
+    if (inviteUsername.trim().toLowerCase() === user?.username?.toLowerCase()) {
+      return showToast('Không thể tự kết nối với chính mình! 😅', 'error');
+    }
     setLoading(true);
     try {
       // Create invitation
@@ -83,8 +86,21 @@ export default function Tab4Profile() {
     if (acceptCode !== invite.love_code) {
       return showToast('Mã tình yêu sai bét rồi, định ngoại tình hả? 😤', 'error');
     }
+    if (user.couple_id) {
+      return showToast('Bạn đã có người yêu rồi, định bắt cá 2 tay sao? 😤', 'error');
+    }
+
     setLoading(true);
     try {
+      // 0. Check if sender is already connected
+      const { data: senderCheck } = await supabase.from('users').select('couple_id').eq('id', invite.sender_id).single();
+      if (senderCheck?.couple_id) {
+         await supabase.from('invitations').delete().eq('id', invite.id);
+         setLoading(false);
+         setShowAcceptModal(null);
+         return showToast('Trễ rồi! Người ấy đã kết nối với ai đó khác 💔', 'error');
+      }
+
       // 1. Create Couple
       const { data: coupleData, error: coupleErr } = await supabase.from('couples').insert({
         partner1_id: invite.sender_id,
@@ -135,6 +151,24 @@ export default function Tab4Profile() {
       setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
       showToast('Lỗi lưu thông tin 🥺', 'error');
+    }
+    setLoading(false);
+  };
+
+  const handleDisconnect = async () => {
+    if (!window.confirm('Bạn có chắc chắn muốn hủy kết nối không? (Hai người sẽ không còn chung lịch trình nữa)')) return;
+    setLoading(true);
+    try {
+       if (user.couple_id) {
+         const { error } = await supabase.from('couples').delete().eq('id', user.couple_id);
+         if (error) throw error;
+       }
+       
+       await supabase.from('users').update({ couple_id: null }).eq('id', user.id);
+       showToast('Đã hủy kết nối thành công. 💔', 'success');
+       await refreshAuth();
+    } catch (e) {
+       showToast('Lỗi hủy kết nối: ' + e.message, 'error');
     }
     setLoading(false);
   };
@@ -224,17 +258,30 @@ export default function Tab4Profile() {
         
         {/* Connection Status */}
         <div className="mt-4 p-3 rounded-2xl bg-zinc-900/50 border border-white/5">
-          {partner ? (
+          {user?.couple_id ? (
             <div className="flex flex-col items-center gap-1.5">
               <div className="text-[10px] font-black text-rose-300 uppercase tracking-wide">Đã kết nối với</div>
               <div className="flex items-center gap-2">
-                {partner?.avatar_url ? (
-                  <img src={partner.avatar_url} alt="Avatar" className="w-7 h-7 rounded-full object-cover border border-rose-400" />
+                {partner ? (
+                  <>
+                    {partner?.avatar_url ? (
+                      <img src={partner.avatar_url} alt="Avatar" className="w-7 h-7 rounded-full object-cover border border-rose-400" />
+                    ) : (
+                      <span className="text-xl">{partner?.gender === 'MALE' ? '👦' : '👧'}</span>
+                    )}
+                    <span className="text-sm font-extrabold text-white">{partner?.display_name}</span>
+                  </>
                 ) : (
-                  <span className="text-xl">{partner?.gender === 'MALE' ? '👦' : '👧'}</span>
+                  <span className="text-sm font-extrabold text-zinc-400">Không tìm thấy thông tin nửa kia</span>
                 )}
-                <span className="text-sm font-extrabold text-white">{partner?.display_name}</span>
               </div>
+              <button 
+                onClick={handleDisconnect}
+                disabled={loading}
+                className="mt-2 px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-xs font-bold hover:bg-red-500/30 transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Đang xử lý...' : 'Hủy kết nối'}
+              </button>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">

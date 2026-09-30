@@ -101,6 +101,16 @@ export function AppProvider({ children }) {
   function setThemeId(id) {
     setThemeIdRaw(id);
     localStorage.setItem(LS_THEME, id);
+    
+    // Optimistic cache update for instant refresh support
+    if (user?.id) {
+      try {
+        const cachedUser = JSON.parse(localStorage.getItem('sc_user') || '{}');
+        cachedUser.theme_id = id;
+        localStorage.setItem('sc_user', JSON.stringify(cachedUser));
+      } catch (e) {}
+    }
+
     if (user?.id && isSupabaseReady) {
       supabase.from('users').update({ theme_id: id }).eq('id', user.id).then(({error}) => {
         if (error) console.error('Failed to save theme to Supabase:', error.message);
@@ -115,6 +125,16 @@ export function AppProvider({ children }) {
     } else {
       localStorage.removeItem('sc_wallpaper');
     }
+    
+    // Optimistic cache update for instant refresh support
+    if (user?.id) {
+      try {
+        const cachedUser = JSON.parse(localStorage.getItem('sc_user') || '{}');
+        cachedUser.wallpaper_id = id;
+        localStorage.setItem('sc_user', JSON.stringify(cachedUser));
+      } catch (e) {}
+    }
+
     if (user?.id && isSupabaseReady) {
       supabase.from('users').update({ wallpaper_id: id }).eq('id', user.id).then(({error}) => {
         if (error) console.error('Failed to save wallpaper to Supabase:', error.message);
@@ -166,16 +186,17 @@ export function AppProvider({ children }) {
     // Load initial data from Supabase
     if (!couple?.id) return;
     
-    Promise.all([sbGetTasks(couple.id), sbGetReviews(couple.id), sbGetWallpapers(couple.id).catch(() => [])]).then(([t, r, wps]) => {
-      setTasks(t || []);
-      setReviews(r || []);
+    Promise.all([
+      sbGetTasks(couple.id).catch(err => { console.warn('Tasks err', err); return null; }), 
+      sbGetReviews(couple.id).catch(err => { console.warn('Reviews err', err); return null; }), 
+      sbGetWallpapers(couple.id).catch(() => [])
+    ]).then(([t, r, wps]) => {
+      if (t) setTasks(t);
+      if (r) setReviews(r);
       if (wps && wps.length > 0) {
         setCustomWallpapers(wps);
         lsSet(LS_CUSTOM_WP, wps);
       }
-      setSynced(true);
-    }).catch(err => {
-      console.warn('Supabase load failed, using localStorage', err);
       setSynced(true);
     });
 
@@ -570,6 +591,7 @@ export function AppProvider({ children }) {
     WALLPAPERS: allWallpapers,
     activeNotification, dismissNotification, triggerTestNotification,
     notifPermission, requestNotifPermission,
+    synced,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

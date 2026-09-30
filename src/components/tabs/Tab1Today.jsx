@@ -43,6 +43,12 @@ function parseTimeRange(t) {
   return { start: startDec, end: endDec };
 }
 
+function getLastName(fullName) {
+  if (!fullName) return '';
+  const parts = fullName.trim().split(' ');
+  return parts[parts.length - 1];
+}
+
 export default function Tab1Today() {
   const { tasks } = useApp();
   const { user, partner } = useAuth();
@@ -50,8 +56,8 @@ export default function Tab1Today() {
   // Resolve female and male names
   const femaleUser = user?.gender === 'FEMALE' ? user : (partner?.gender === 'FEMALE' ? partner : null);
   const maleUser = user?.gender === 'MALE' ? user : (partner?.gender === 'MALE' ? partner : null);
-  const femaleName = femaleUser?.display_name || 'Bạn Nữ';
-  const maleName = maleUser?.display_name || 'Bạn Nam';
+  const femaleName = femaleUser?.full_name || femaleUser?.display_name || 'Bạn Nữ';
+  const maleName = maleUser?.full_name || maleUser?.display_name || 'Bạn Nam';
 
   const todayIdx = getDayIndex();
   const [selectedDay, setSelectedDay] = useState(todayIdx);
@@ -97,21 +103,41 @@ export default function Tab1Today() {
 
   // Touch swipe support on timetable card
   const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
   const touchEndX = useRef(0);
+  const touchEndY = useRef(0);
+  const [swipeAnim, setSwipeAnim] = useState('');
 
   const handleTouchStart = (e) => {
     touchStartX.current = e.targetTouches[0].clientX;
+    touchStartY.current = e.targetTouches[0].clientY;
+    touchEndX.current = e.targetTouches[0].clientX;
+    touchEndY.current = e.targetTouches[0].clientY;
   };
   const handleTouchMove = (e) => {
     touchEndX.current = e.targetTouches[0].clientX;
+    touchEndY.current = e.targetTouches[0].clientY;
   };
   const handleTouchEnd = () => {
-    const diff = touchStartX.current - touchEndX.current;
-    if (Math.abs(diff) > 55) {
-      if (diff > 0 && selectedDay < 6) {
-        setSelectedDay(prev => prev + 1); // Swipe left -> Next day
-      } else if (diff < 0 && selectedDay > 0) {
-        setSelectedDay(prev => prev - 1); // Swipe right -> Prev day
+    const diffX = touchStartX.current - touchEndX.current;
+    const diffY = touchStartY.current - touchEndY.current;
+    
+    // Require a longer swipe (100px) and ensure horizontal movement is much greater than vertical
+    if (Math.abs(diffX) > 100 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
+      if (diffX > 0 && selectedDay < 6) {
+        setSwipeAnim('translate-x-[-15px] opacity-0'); // animate out
+        setTimeout(() => {
+          setSelectedDay(prev => prev + 1); // Swipe left -> Next day
+          setSwipeAnim('translate-x-[15px] opacity-0 transition-none'); // snap to right
+          setTimeout(() => setSwipeAnim('translate-x-0 opacity-100 transition-all duration-300'), 20); // animate in
+        }, 150);
+      } else if (diffX < 0 && selectedDay > 0) {
+        setSwipeAnim('translate-x-[15px] opacity-0'); // animate out
+        setTimeout(() => {
+          setSelectedDay(prev => prev - 1); // Swipe right -> Prev day
+          setSwipeAnim('translate-x-[-15px] opacity-0 transition-none'); // snap to left
+          setTimeout(() => setSwipeAnim('translate-x-0 opacity-100 transition-all duration-300'), 20); // animate in
+        }, 150);
       }
     }
   };
@@ -252,7 +278,7 @@ export default function Tab1Today() {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          className="glass-panel rounded-[28px] overflow-hidden border border-white/10 shadow-2xl relative"
+          className={`glass-panel rounded-[28px] overflow-hidden border border-white/10 shadow-2xl relative transition-all duration-150 ease-out ${swipeAnim}`}
         >
           {/* Header of Timeline: Column headers */}
           <div className="flex border-b border-white/10 bg-zinc-950/60 sticky top-0 z-20 backdrop-blur-xl">
@@ -261,12 +287,14 @@ export default function Tab1Today() {
               Giờ
             </div>
             {/* Female Column */}
-            <div className="flex-1 py-2 text-center text-xs font-black uppercase tracking-wider text-pink-300 bg-pink-500/10 border-r border-white/10 flex items-center justify-center gap-1.5">
-              <span>👧</span> {femaleName}
+            <div className="flex-1 w-0 min-w-0 py-2 px-1 text-center text-xs font-black uppercase tracking-wider text-pink-300 bg-pink-500/10 border-r border-white/10 flex items-center justify-center gap-1">
+              <span className="flex-shrink-0">👧</span>
+              <span className="truncate">{getLastName(femaleName)}</span>
             </div>
             {/* Male Column */}
-            <div className="flex-1 py-2 text-center text-xs font-black uppercase tracking-wider text-sky-300 bg-sky-500/10 flex items-center justify-center gap-1.5">
-              <span>👦</span> {maleName}
+            <div className="flex-1 w-0 min-w-0 py-2 px-1 text-center text-xs font-black uppercase tracking-wider text-sky-300 bg-sky-500/10 flex items-center justify-center gap-1">
+              <span className="flex-shrink-0">👦</span>
+              <span className="truncate">{getLastName(maleName)}</span>
             </div>
           </div>
 

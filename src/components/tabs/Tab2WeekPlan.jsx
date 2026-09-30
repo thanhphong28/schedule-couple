@@ -3,7 +3,7 @@ import { Check, Filter, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { CATEGORIES, DAYS, DAYS_EN, PERSONS } from '../../data/initialTasks.js';
-import { TaskCard, TaskModal } from '../shared/TaskCard.jsx';
+import { TaskModal } from '../shared/TaskCard.jsx';
 
 function ResetModal({ onClose, onConfirm }) {
   const content = (
@@ -33,47 +33,91 @@ function ResetModal({ onClose, onConfirm }) {
   return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 }
 
+function MiniTaskCard({ task, onEdit }) {
+  const cat = CATEGORIES[task.category] || CATEGORIES.WORK;
+  const person = PERSONS[task.person] || PERSONS.BOTH;
+  
+  return (
+    <div 
+      onClick={() => onEdit(task)}
+      className={`relative overflow-hidden p-3 rounded-[16px] border flex items-center gap-3 cursor-pointer transition-all active:scale-95 shadow-sm
+        ${task.is_completed ? 'bg-white/5 border-white/5 opacity-60' : 'bg-white/10 border-white/10 hover:bg-white/15'}`}
+    >
+      {/* Category indicator line */}
+      <div 
+        className="absolute left-0 top-0 bottom-0 w-1.5 opacity-80" 
+        style={{ backgroundColor: cat.color }} 
+      />
+      
+      <div className="flex-1 min-w-0 flex flex-col justify-center pl-1">
+        <h4 className={`text-xs font-bold truncate ${task.is_completed ? 'line-through text-zinc-400' : 'text-zinc-100'}`}>
+          {task.title}
+        </h4>
+        <span className="text-[10px] text-zinc-400 font-medium flex items-center gap-1 mt-0.5">
+          {task.time} • {cat.label}
+        </span>
+      </div>
+      
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="text-sm bg-black/20 p-1.5 rounded-full shadow-inner">{person.emoji}</div>
+        {task.is_completed && <Check size={14} className="text-emerald-400 ml-1" strokeWidth={3} />}
+      </div>
+    </div>
+  );
+}
+
 export default function Tab2WeekPlan() {
   const { tasks, deleteTask, resetWeek, totalTasks, completedTasks, bothTasks, progressPct } = useApp();
 
-  // Filters
-  const [filterPerson, setFilterPerson] = useState('ALL');
-  const [filterCategory, setFilterCategory] = useState('ALL');
-  const [filterStatus, setFilterStatus] = useState('ALL');
-  const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const [showReset, setShowReset] = useState(false);
 
-  const filtered = useMemo(() => {
-    return tasks
-      .filter(t => {
-        if (filterPerson !== 'ALL' && t.person !== filterPerson) return false;
-        if (filterCategory !== 'ALL' && t.category !== filterCategory) return false;
-        if (filterStatus === 'DONE' && !t.is_completed) return false;
-        if (filterStatus === 'TODO' && t.is_completed) return false;
-        if (search && !(t.title || '').toLowerCase().includes(search.toLowerCase())) return false;
-        return true;
-      })
-      .sort((a, b) => a.day - b.day || a.sort_order - b.sort_order);
-  }, [tasks, filterPerson, filterCategory, filterStatus, search]);
+  // ─── WEEKLY INSIGHTS GENERATOR ───
+  const weeklyInsights = useMemo(() => {
+    if (tasks.length === 0) return { emoji: '🌱', title: 'Tuần mới rảnh rỗi', text: 'Chưa có kế hoạch nào. Cùng nhau tạo vài công việc hoặc lên lịch hẹn hò nhé!', color: 'from-emerald-500/20 to-teal-500/10', border: 'border-emerald-500/30' };
+    if (progressPct === 100) return { emoji: '🏆', title: 'Tuyệt đỉnh!', text: 'Mọi kế hoạch đã hoàn tất. Quá xuất sắc! Cuối tuần thư giãn thôi nào!', color: 'from-amber-500/20 to-yellow-500/10', border: 'border-amber-500/30' };
+    
+    const dateCount = tasks.filter(t => t.category === 'DATE').length;
+    if (dateCount > 0 && progressPct < 100) return { emoji: '💑', title: 'Chút Lãng Mạn', text: `Tuần này hai bạn có ${dateCount} lịch hẹn hò. Nhớ chuẩn bị thật đẹp và tận hưởng nhé!`, color: 'from-pink-500/20 to-rose-500/10', border: 'border-pink-500/30' };
+    
+    if (bothTasks >= 2) return { emoji: '💞', title: 'Gắn Kết', text: `Tuần này có tới ${bothTasks} việc làm cùng nhau. Chúc hai bạn có những phút giây thật vui!`, color: 'from-rose-500/20 to-red-500/10', border: 'border-rose-500/30' };
+    
+    const workCount = tasks.filter(t => t.category === 'WORK').length;
+    if (workCount >= 5) return { emoji: '💪', title: 'Tuần Bận Rộn', text: 'Có vẻ tuần này khá nhiều việc. Đừng quên nhắc nhau nghỉ ngơi uống nước nha!', color: 'from-blue-500/20 to-cyan-500/10', border: 'border-blue-500/30' };
+    
+    if (progressPct >= 50) return { emoji: '🔥', title: 'Đang Bay Cao', text: 'Tiến độ đã qua một nửa! Tiếp tục giữ vững phong độ này nhé!', color: 'from-orange-500/20 to-amber-500/10', border: 'border-orange-500/30' };
+    
+    return { emoji: '✨', title: 'Năng Lượng', text: 'Cùng nhau hoàn thành các mục tiêu trong tuần này nào!', color: 'from-indigo-500/20 to-purple-500/10', border: 'border-indigo-500/30' };
+  }, [tasks, progressPct, bothTasks]);
 
-  // Group by day
-  const grouped = useMemo(() => {
-    const g = {};
-    filtered.forEach(t => {
-      if (!g[t.day]) g[t.day] = [];
-      g[t.day].push(t);
+  const categoryStats = useMemo(() => {
+    const stats = {};
+    Object.keys(CATEGORIES).forEach(k => stats[k] = 0);
+    tasks.forEach(t => {
+      if (stats[t.category] !== undefined) stats[t.category]++;
     });
-    return g;
-  }, [filtered]);
+    return Object.keys(CATEGORIES)
+      .map(k => ({ key: k, count: stats[k], ...CATEGORIES[k] }))
+      .sort((a, b) => b.count - a.count);
+  }, [tasks]);
+
+  const personStats = useMemo(() => {
+    let male = 0;
+    let female = 0;
+    let both = 0;
+    tasks.forEach(t => {
+      if (t.person === 'MALE') male++;
+      else if (t.person === 'FEMALE') female++;
+      else both++;
+    });
+    return { male, female, both };
+  }, [tasks]);
 
   const handleReset = () => {
     resetWeek();
     setShowReset(false);
   };
-
-  const hasFilters = filterPerson !== 'ALL' || filterCategory !== 'ALL' || filterStatus !== 'ALL' || search;
 
   const progressColor =
     progressPct >= 80 ? '#10B981' :
@@ -127,7 +171,7 @@ export default function Tab2WeekPlan() {
       <div className="flex items-center justify-between gap-2 px-1">
         <div>
           <h2 className="text-base font-extrabold text-white">📋 Kế hoạch cả tuần</h2>
-          <p className="text-xs text-zinc-400">{filtered.length} / {tasks.length} công việc</p>
+          <p className="text-xs text-zinc-400">{tasks.length} công việc tuần này</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -149,148 +193,81 @@ export default function Tab2WeekPlan() {
         </div>
       </div>
 
-      {/* ─── SEARCH & FILTER SECTION ─── */}
-      <section className="glass-panel p-3 rounded-[20px] space-y-2.5">
-        {/* Search Input */}
-        <div className="relative">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-          <input
-            className="input-romantic pl-10 pr-9 py-2 text-xs"
-            placeholder="Tìm kiếm công việc..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          {search && (
-            <button 
-              type="button"
-              onClick={() => setSearch('')} 
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1"
-            >
-              <X size={14} />
-            </button>
-          )}
+      {/* ─── WEEKLY INSIGHTS WIDGET ─── */}
+      <section className={`glass-panel p-4 rounded-[20px] border flex items-start gap-3 shadow-sm ${weeklyInsights.border} bg-gradient-to-br ${weeklyInsights.color}`}>
+        <div className="w-10 h-10 rounded-full bg-black/20 flex items-center justify-center text-2xl flex-shrink-0 shadow-inner">
+          {weeklyInsights.emoji}
         </div>
-
-        {/* Scrollable Filter Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1">
-          {/* Status filters */}
-          {[
-            ['ALL', 'Tất cả'],
-            ['TODO', 'Chưa xong'],
-            ['DONE', 'Đã xong']
-          ].map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setFilterStatus(k)}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border ${
-                filterStatus === k
-                  ? 'bg-rose-500 text-white border-rose-400 shadow-sm'
-                  : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-
-          {/* Separator */}
-          <span className="text-zinc-600 text-xs">|</span>
-
-          {/* Person filters */}
-          {['ALL', ...Object.keys(PERSONS)].map(k => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setFilterPerson(k)}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border ${
-                filterPerson === k
-                  ? 'bg-white/25 text-white border-white/40 shadow-sm'
-                  : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'
-              }`}
-            >
-              {k === 'ALL' ? '👥 Tất cả người' : `${PERSONS[k].emoji} ${PERSONS[k].label}`}
-            </button>
-          ))}
-
-          {/* Separator */}
-          <span className="text-zinc-600 text-xs">|</span>
-
-          {/* Category filters */}
-          {['ALL', ...Object.keys(CATEGORIES)].map(k => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setFilterCategory(k)}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border ${
-                filterCategory === k
-                  ? 'bg-white/25 text-white border-white/40 shadow-sm'
-                  : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'
-              }`}
-            >
-              {k === 'ALL' ? '🗂 Tất cả loại' : `${CATEGORIES[k].icon} ${CATEGORIES[k].label}`}
-            </button>
-          ))}
-
-          {hasFilters && (
-            <button
-              type="button"
-              onClick={() => { setFilterPerson('ALL'); setFilterCategory('ALL'); setFilterStatus('ALL'); setSearch(''); }}
-              className="px-2.5 py-1 text-[11px] font-bold text-rose-300 underline whitespace-nowrap"
-            >
-              Xóa lọc
-            </button>
-          )}
+        <div className="flex-1 min-w-0 pt-0.5">
+          <h3 className="text-xs font-black text-white uppercase tracking-wide mb-1">{weeklyInsights.title}</h3>
+          <p className="text-[11px] text-zinc-300 font-medium leading-snug">{weeklyInsights.text}</p>
         </div>
       </section>
 
-      {/* ─── GROUPED DAYS LIST ─── */}
-      {Object.keys(grouped).length === 0 ? (
-        <div className="glass-panel rounded-3xl p-10 text-center border-white/10">
-          <div className="text-4xl mb-3">🔍</div>
-          <p className="text-sm font-bold text-white">Không tìm thấy công việc nào phù hợp</p>
-          <p className="text-xs text-zinc-400 mt-1">Hãy thử xóa bộ lọc hoặc tìm kiếm từ khóa khác.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {DAYS.map((dayName, di) => {
-            if (!grouped[di]) return null;
-            const dayTasks = grouped[di];
-            const done = dayTasks.filter(t => t.is_completed).length;
-            const isAllDone = done === dayTasks.length && dayTasks.length > 0;
-
+      {/* ─── CATEGORY DISTRIBUTION ─── */}
+      <section className="glass-panel p-4 rounded-[24px] shadow-lg">
+        <h3 className="text-sm font-extrabold text-white mb-4 flex items-center gap-2">
+          📊 Phân bổ danh mục
+        </h3>
+        <div className="space-y-3">
+          {categoryStats.map(cat => {
+            if (cat.count === 0 && tasks.length > 0) return null;
+            const pct = tasks.length > 0 ? (cat.count / tasks.length) * 100 : 0;
             return (
-              <div key={di} className="glass-panel rounded-[24px] overflow-hidden border border-white/10">
-                {/* Day Header */}
-                <div className="px-4 py-3 flex items-center justify-between bg-zinc-950/50 border-b border-white/10">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black uppercase tracking-wider text-white">
-                      {DAYS_EN[di]} • {dayName}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-zinc-300 border border-white/10">
-                      {dayTasks.length} việc
-                    </span>
-                  </div>
-                  <span className={`text-xs font-bold ${isAllDone ? 'text-emerald-300' : 'text-rose-300'}`}>
-                    {done}/{dayTasks.length} hoàn thành {isAllDone ? '🎉' : ''}
+              <div key={cat.key}>
+                <div className="flex justify-between text-xs font-bold mb-1.5">
+                  <span className="text-zinc-300 flex items-center gap-1.5">
+                    {cat.icon} {cat.label}
                   </span>
+                  <span className="text-white">{cat.count} việc</span>
                 </div>
-
-                {/* Day Tasks */}
-                <div className="p-3 space-y-2.5">
-                  {dayTasks.map(task => (
-                    <div key={task.id} className="relative group">
-                      <TaskCard
-                        task={task}
-                        onEdit={(t) => { setEditTask(t); setShowModal(true); }}
-                      />
-                    </div>
-                  ))}
+                <div className="h-2 rounded-full bg-zinc-950 border border-white/10 overflow-hidden">
+                  <div 
+                    className="h-full rounded-full transition-all duration-1000" 
+                    style={{ width: `${pct}%`, backgroundColor: cat.color }} 
+                  />
                 </div>
               </div>
             );
           })}
         </div>
-      )}
+      </section>
+
+      {/* ─── PERSON CONTRIBUTION ─── */}
+      <section className="glass-panel p-4 rounded-[24px] shadow-lg">
+        <h3 className="text-sm font-extrabold text-white mb-4 flex items-center gap-2">
+          🤝 Ai bận rộn nhất tuần?
+        </h3>
+        <div className="flex items-end justify-between px-2 pt-2 pb-6">
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-2xl">{PERSONS.MALE.emoji}</span>
+            <span className="text-[11px] font-bold text-zinc-400">{PERSONS.MALE.label}</span>
+            <span className="text-lg font-black text-white">{personStats.male}</span>
+          </div>
+          <div className="flex flex-col items-center gap-2 opacity-80">
+            <span className="text-xl">{PERSONS.BOTH.emoji}</span>
+            <span className="text-[10px] font-bold text-zinc-500">{PERSONS.BOTH.label}</span>
+            <span className="text-base font-bold text-zinc-300">{personStats.both}</span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-2xl">{PERSONS.FEMALE.emoji}</span>
+            <span className="text-[11px] font-bold text-zinc-400">{PERSONS.FEMALE.label}</span>
+            <span className="text-lg font-black text-white">{personStats.female}</span>
+          </div>
+        </div>
+        
+        {/* Progress bar split */}
+        {tasks.length > 0 && (
+          <div className="flex h-3 rounded-full overflow-hidden border border-white/10 bg-zinc-950">
+            <div style={{ width: `${(personStats.male / tasks.length) * 100}%`, backgroundColor: PERSONS.MALE.color }} title={`Anh ấy: ${personStats.male}`} />
+            <div style={{ width: `${(personStats.both / tasks.length) * 100}%`, backgroundColor: PERSONS.BOTH.color }} title={`Cùng nhau: ${personStats.both}`} />
+            <div style={{ width: `${(personStats.female / tasks.length) * 100}%`, backgroundColor: PERSONS.FEMALE.color }} title={`Cô ấy: ${personStats.female}`} />
+          </div>
+        )}
+        {tasks.length === 0 && (
+          <div className="h-3 rounded-full bg-zinc-950 border border-white/10" />
+        )}
+      </section>
 
       {/* ─── MODALS ─── */}
       {showModal && (

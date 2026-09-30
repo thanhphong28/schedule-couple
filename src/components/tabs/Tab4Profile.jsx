@@ -274,6 +274,7 @@ export default function Tab4Profile() {
           <h4 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest mb-2.5">Thế giới giao diện (Theme)</h4>
           <div className="grid grid-cols-2 gap-2">
             {[
+              { id: 'minimal', name: 'Mặc định (Nhẹ)', emoji: '⚡', color: 'from-zinc-500 to-zinc-700' },
               { id: 'ocean', name: 'Ocean Liquid Glass', emoji: '🌊', color: 'from-cyan-500 to-blue-500' },
               { id: 'aurora', name: 'Aurora Fantasy', emoji: '🌌', color: 'from-purple-500 to-indigo-500' },
               { id: 'winter', name: 'Winter Dream', emoji: '❄️', color: 'from-sky-200 to-blue-300' },

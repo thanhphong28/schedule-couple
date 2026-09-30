@@ -8,11 +8,7 @@ import { getDayIndex } from '../../lib/utils.js';
 import { TaskCard, TaskModal } from '../shared/TaskCard.jsx';
 
 // Timeline configs
-const START_HOUR = 6; // 06:00
-const END_HOUR = 24; // 24:00
-const PIXELS_PER_HOUR = 100; // 1 hour = 100px (increased for readability)
-const TIMELINE_HEIGHT = (END_HOUR - START_HOUR) * PIXELS_PER_HOUR;
-const HOURS = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
+const START_HOUR = 6; // Used for default fallback in parseTimeRange
 
 function timeToNum(t) {
   if (!t) return 0;
@@ -61,7 +57,7 @@ export default function Tab1Today() {
 
   const todayIdx = getDayIndex();
   const [selectedDay, setSelectedDay] = useState(todayIdx);
-  const [viewMode, setViewMode] = useState('list'); // 'timeline' | 'list' -> default to list for checklist focus
+  const [viewMode, setViewMode] = useState('timeline'); // 'timeline' | 'list'
   const [personFilter, setPersonFilter] = useState('ALL'); // 'ALL' | 'FEMALE' | 'MALE'
   const [editTask, setEditTask] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -240,26 +236,24 @@ export default function Tab1Today() {
 
       {/* ─── SUMMARY STATS & VIEW TOGGLE ─── */}
       <div className="flex items-center justify-between gap-3 px-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
            <h2 className="text-sm font-extrabold text-white flex items-center gap-1.5">
               <span>🎯</span> Hôm nay
            </h2>
+           {viewMode === 'timeline' && (
+             <button
+               type="button"
+               onClick={() => { setEditTask(null); setShowModal(true); }}
+               className="p-1.5 rounded-full bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 transition-colors shadow-sm"
+               aria-label="Thêm việc vào lịch"
+             >
+               <Plus size={14} strokeWidth={3} />
+             </button>
+           )}
         </div>
 
         {/* View Switcher: Timeline vs List */}
         <div className="p-1 rounded-2xl bg-zinc-900/90 border border-white/10 flex items-center gap-1 shadow-inner">
-          <button
-            type="button"
-            onClick={() => setViewMode('list')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-              viewMode === 'list'
-                ? 'bg-white/20 text-white shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <CheckCircle2 size={14} />
-            <span>Việc ({dayTasks.length})</span>
-          </button>
           <button
             type="button"
             onClick={() => setViewMode('timeline')}
@@ -272,12 +266,25 @@ export default function Tab1Today() {
             <Clock size={14} />
             <span>Lịch</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              viewMode === 'list'
+                ? 'bg-white/20 text-white shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <CheckCircle2 size={14} />
+            <span>Việc ({dayTasks.length})</span>
+          </button>
         </div>
       </div>
 
 
       {/* ─── VIEW 1: TIMELINE (Visual Daily Schedule) ─── */}
       {viewMode === 'timeline' && (
+        <div className="space-y-3">
         <section 
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
@@ -285,124 +292,155 @@ export default function Tab1Today() {
           className={`glass-panel rounded-[28px] overflow-hidden border border-white/10 shadow-2xl relative transition-all duration-150 ease-out ${swipeAnim}`}
         >
           {/* Header of Timeline: Column headers */}
-          <div className="flex border-b border-white/10 bg-zinc-950/60 sticky top-0 z-20 backdrop-blur-xl">
-            {/* Time label column space */}
-            <div className="w-[50px] flex-shrink-0 text-center py-2 text-[10px] font-black uppercase tracking-wider text-zinc-400 border-r border-white/10">
+          <div className="grid border-b border-white/10 bg-zinc-950/60 sticky top-0 z-30 backdrop-blur-xl" style={{ gridTemplateColumns: '50px 1fr 1fr' }}>
+            <div className="text-center py-2 text-[10px] font-black uppercase tracking-wider text-zinc-400 border-r border-white/10 flex items-center justify-center">
               Giờ
             </div>
-            {/* Female Column */}
-            <div className="flex-1 w-0 min-w-0 py-2 px-1 text-center text-xs font-black uppercase tracking-wider text-pink-300 bg-pink-500/10 border-r border-white/10 flex items-center justify-center gap-1">
+            <div className="py-2 px-1 text-center text-xs font-black uppercase tracking-wider text-pink-300 bg-pink-500/10 border-r border-white/10 flex items-center justify-center gap-1">
               <span className="flex-shrink-0">👧</span>
               <span className="truncate">{getLastName(femaleName)}</span>
             </div>
-            {/* Male Column */}
-            <div className="flex-1 w-0 min-w-0 py-2 px-1 text-center text-xs font-black uppercase tracking-wider text-sky-300 bg-sky-500/10 flex items-center justify-center gap-1">
+            <div className="py-2 px-1 text-center text-xs font-black uppercase tracking-wider text-sky-300 bg-sky-500/10 flex items-center justify-center gap-1">
               <span className="flex-shrink-0">👦</span>
               <span className="truncate">{getLastName(maleName)}</span>
             </div>
           </div>
 
           {/* Timeline Scroll Area */}
-          <div className="relative flex overflow-y-auto max-h-[65dvh] scrollbar-none" style={{ height: TIMELINE_HEIGHT }}>
-            {/* Left: Time Ruler */}
-            <div className="w-[50px] flex-shrink-0 bg-zinc-950/50 border-r border-white/10 relative z-10 select-none">
-              {HOURS.map(hour => (
-                <div 
-                  key={hour} 
-                  className="absolute w-full text-right pr-2 text-[11px] font-bold text-zinc-400"
-                  style={{ top: (hour - START_HOUR) * PIXELS_PER_HOUR + 2 }}
-                >
-                  {hour.toString().padStart(2, '0')}:00
-                </div>
-              ))}
-            </div>
-
-            {/* Right: Schedule Canvas */}
-            <div className="flex-1 relative">
-              {/* Horizontal Hour Grid Lines */}
-              {HOURS.map(hour => (
-                <div 
-                  key={hour} 
-                  className="absolute w-full border-t border-white/5"
-                  style={{ top: (hour - START_HOUR) * PIXELS_PER_HOUR }}
-                />
-              ))}
-
-              {/* Vertical Column Divider (Between Thi & Phong) */}
-              <div className="absolute top-0 bottom-0 left-1/2 w-px border-r border-dashed border-white/10 pointer-events-none" />
-
-              {/* Live Current Time Line (if today) */}
-              {isToday && currentTimeDec >= START_HOUR && currentTimeDec <= END_HOUR && (
-                <div 
-                  className="absolute left-0 right-0 z-20 flex items-center pointer-events-none"
-                  style={{ top: (currentTimeDec - START_HOUR) * PIXELS_PER_HOUR }}
-                >
-                  <div className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e] -ml-1" />
-                  <div className="flex-1 h-0.5 bg-gradient-to-r from-rose-500 via-rose-400 to-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]" />
-                  <span className="text-[9px] font-black px-1 rounded bg-rose-500 text-white mr-1 shadow-sm">
-                    Hiện tại
-                  </span>
-                </div>
-              )}
-
-              {/* Render Tasks on Timeline */}
-              {dayTasks.map(t => {
-                const { start, end } = parseTimeRange(t.time);
-                const safeStart = Math.max(START_HOUR, start);
-                const safeEnd = Math.min(END_HOUR, Math.max(safeStart + 0.35, end));
-                
-                const top = (safeStart - START_HOUR) * PIXELS_PER_HOUR;
-                const height = Math.max(48, (safeEnd - safeStart) * PIXELS_PER_HOUR); // Min height 48px to read text
-
-                // Column placement
-                let left = '0%';
-                let width = '100%';
-                if (t.person === 'FEMALE') {
-                  width = '50%';
-                } else if (t.person === 'MALE') {
-                  left = '50%';
-                  width = '50%';
-                }
-
-                const catColor = CATEGORIES[t.category]?.color || '#F43F5E';
-
+          <div className="relative overflow-y-auto max-h-[65dvh] scrollbar-none pb-4">
+            {(() => {
+              if (dayTasks.length === 0) {
                 return (
-                  <div
-                    key={t.id}
-                    onClick={() => { setEditTask(t); setShowModal(true); }}
-                    className="absolute z-10 p-0.5 cursor-pointer select-none transition-transform active:scale-[0.98]"
-                    style={{ top, height, left, width }}
-                  >
-                    <div 
-                      className={`w-full h-full rounded-xl p-1.5 flex flex-col justify-start relative overflow-hidden border backdrop-blur-md transition-all ${
-                        t.is_completed 
-                          ? 'bg-zinc-950/70 border-white/5 opacity-60' 
-                          : 'bg-zinc-900/85 border-white/15 hover:border-white/30 shadow-md'
-                      }`}
-                    >
-                      {/* Left Category Indicator */}
-                      <div 
-                        className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
-                        style={{ backgroundColor: t.is_completed ? '#52525b' : catColor }}
-                      />
-
-                      <div className="pl-1.5 min-w-0 flex flex-col h-full justify-start">
-                        {t.time && (
-                          <div className="text-[10px] font-bold text-rose-300 leading-tight mb-0.5 opacity-90">
-                            {t.time}
-                          </div>
-                        )}
-                        <div className={`text-[11px] font-bold leading-snug line-clamp-2 ${
-                          t.is_completed ? 'line-through text-zinc-400 font-medium' : 'text-white'
-                        }`}>
-                          {t.title}
-                        </div>
-                      </div>
-                    </div>
+                  <div className="py-12 text-center text-zinc-400 text-sm">
+                    Không có công việc nào trong ngày
                   </div>
                 );
-              })}
-            </div>
+              }
+
+              // 1. Get all unique time points from tasks
+              const timePoints = new Set();
+              dayTasks.forEach(t => {
+                const { start, end } = parseTimeRange(t.time);
+                timePoints.add(start);
+                timePoints.add(end);
+              });
+              
+              const times = Array.from(timePoints).sort((a, b) => a - b);
+              
+              // 2. Create segments (rows)
+              const segments = [];
+              for (let i = 0; i < times.length - 1; i++) {
+                segments.push({ start: times[i], end: times[i+1] });
+              }
+
+              const formatTimeDec = (dec) => {
+                const h = Math.floor(dec);
+                const m = Math.round((dec - h) * 60);
+                return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+              };
+
+              return (
+                <div 
+                  className="grid relative" 
+                  style={{
+                    gridTemplateColumns: '50px 1fr 1fr',
+                    gridAutoRows: 'minmax(50px, auto)'
+                  }}
+                >
+                  {/* Vertical dividers */}
+                  <div className="absolute top-0 bottom-0 left-[50px] border-r border-white/10 z-0" />
+                  <div className="absolute top-0 bottom-0 left-[calc(50px+(100%-50px)/2)] border-r border-dashed border-white/10 z-0" />
+
+                  {/* Render Segments for Time Labels and Grid Lines */}
+                  {segments.map((seg, idx) => {
+                    const isCurrent = isToday && currentTimeDec >= seg.start && currentTimeDec < seg.end;
+                    return (
+                      <div 
+                        key={`seg-${idx}`} 
+                        className="relative border-b border-white/5 z-0" 
+                        style={{ gridColumn: '1 / 4', gridRow: idx + 1 }}
+                      >
+                        {/* Time Label */}
+                        <div className="absolute left-0 top-0 w-[50px] h-full">
+                           <div className="absolute top-0 right-1.5 -translate-y-1/2 text-[10px] font-bold text-zinc-400 bg-zinc-950/80 px-1 rounded shadow-sm">
+                             {formatTimeDec(seg.start)}
+                           </div>
+                           {isCurrent && (
+                             <div className="absolute top-0 right-0 w-full h-full border-r-2 border-rose-500/40 bg-rose-500/5 pointer-events-none" />
+                           )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  
+                  {/* Last Time Label at the very bottom */}
+                  {segments.length > 0 && (
+                    <div 
+                      className="relative z-0" 
+                      style={{ gridColumn: '1 / 4', gridRow: segments.length }}
+                    >
+                       <div className="absolute left-0 bottom-0 w-[50px]">
+                         <div className="absolute bottom-0 right-1.5 translate-y-1/2 text-[10px] font-bold text-zinc-400 bg-zinc-950/80 px-1 rounded shadow-sm">
+                           {formatTimeDec(segments[segments.length - 1].end)}
+                         </div>
+                       </div>
+                    </div>
+                  )}
+
+                  {/* Render Tasks */}
+                  {dayTasks.map(t => {
+                    const { start, end } = parseTimeRange(t.time);
+                    const startIndex = times.indexOf(start);
+                    let endIndex = times.indexOf(end);
+                    if (endIndex <= startIndex) endIndex = startIndex + 1;
+
+                    const gridRow = `${startIndex + 1} / ${endIndex + 1}`;
+                    
+                    let gridColumn;
+                    if (t.person === 'FEMALE') gridColumn = '2 / 3';
+                    else if (t.person === 'MALE') gridColumn = '3 / 4';
+                    else gridColumn = '2 / 4';
+
+                    const catColor = CATEGORIES[t.category]?.color || '#F43F5E';
+
+                    return (
+                      <div
+                        key={t.id}
+                        onClick={() => { setEditTask(t); setShowModal(true); }}
+                        className="p-1 z-10 cursor-pointer transition-transform active:scale-[0.98]"
+                        style={{ gridRow, gridColumn }}
+                      >
+                        <div 
+                          className={`w-full h-full rounded-xl p-2 flex flex-col justify-start relative overflow-hidden border backdrop-blur-md transition-all ${
+                            t.is_completed 
+                              ? 'bg-zinc-950/70 border-white/5 opacity-60' 
+                              : 'bg-zinc-900/85 border-white/15 hover:border-white/30 shadow-md'
+                          }`}
+                        >
+                          <div 
+                            className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
+                            style={{ backgroundColor: t.is_completed ? '#52525b' : catColor }}
+                          />
+
+                          <div className="pl-1.5 min-w-0 flex flex-col h-full justify-start">
+                            {t.time && (
+                              <div className="text-[10px] font-bold text-rose-300 leading-tight mb-0.5 opacity-90">
+                                {t.time}
+                              </div>
+                            )}
+                            <div className={`text-[11px] font-bold leading-snug break-words whitespace-normal ${
+                              t.is_completed ? 'line-through text-zinc-400 font-medium' : 'text-white'
+                            }`}>
+                              {t.title}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Quick swipe hint footer */}
@@ -412,6 +450,7 @@ export default function Tab1Today() {
             </span>
           </div>
         </section>
+        </div>
       )}
 
       {/* ─── VIEW 2: TASK LIST FOCUS ─── */}
@@ -429,13 +468,6 @@ export default function Tab1Today() {
                   <span className="text-emerald-400 font-bold">{completed}</span> đã xong • <span className="text-rose-400 font-bold">{total - completed}</span> còn lại
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => { setEditTask(null); setShowModal(true); }}
-                className="btn-primary text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-rose-500/20 active:scale-95 transition-transform"
-              >
-                <Plus size={14} /> Thêm việc
-              </button>
             </div>
 
             {/* Segmented Control for Filtering */}

@@ -342,7 +342,14 @@ export function TaskModal({ task, onClose, onSave }) {
             <button 
               type="button"
               className="p-3 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30 rounded-xl transition-colors active:scale-95 flex items-center justify-center flex-shrink-0" 
-              onClick={() => { deleteTask(task.id); onClose(); }}
+              onClick={() => {
+                if (linkedTasks && linkedTasks.length > 0) {
+                  linkedTasks.forEach(t => deleteTask(t.id));
+                } else {
+                  deleteTask(task.id);
+                }
+                onClose();
+              }}
               title="Xóa công việc"
             >
               <Trash2 size={18} />

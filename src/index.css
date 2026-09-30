@@ -87,6 +87,22 @@
   border-radius: 4px !important;
 }
 
+/* 🎨 MINIMAL (MẶC ĐỊNH MƯỢT MÀ CHO MÁY YẾU) */
+.theme-minimal {
+  --theme-accent: #f43f5e; /* rose-500 */
+  --theme-surface: rgba(20, 20, 22, 0.95);
+  --theme-border: rgba(255, 255, 255, 0.08);
+  --theme-blur: 0px; /* No blur for performance */
+  --theme-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --theme-glow: none;
+}
+.theme-minimal .glass-panel, .theme-minimal .glass-nav {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+  backdrop-filter: none !important; /* Performance boost */
+  box-shadow: var(--theme-shadow) !important;
+}
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;

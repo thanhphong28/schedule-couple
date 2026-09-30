@@ -427,7 +427,7 @@ export function AppProvider({ children }) {
     const { error } = await supabase.from('tasks').upsert(task);
     if (error) {
       console.error('Lỗi lưu công việc:', error);
-      alert('Lỗi lưu dữ liệu lên Database: ' + error.message);
+      showToast('Lỗi lưu dữ liệu lên Database: ' + error.message, 'error');
     }
   }
   async function sbUpsertReview(review) {
@@ -435,7 +435,7 @@ export function AppProvider({ children }) {
     const { error } = await supabase.from('weekly_reviews').upsert(review);
     if (error) {
       console.error('Lỗi lưu đánh giá:', error);
-      alert('Lỗi lưu dữ liệu lên Database: ' + error.message);
+      showToast('Lỗi lưu dữ liệu lên Database: ' + error.message, 'error');
     }
   }
   async function sbDeleteTask(id) {
@@ -443,7 +443,7 @@ export function AppProvider({ children }) {
     const { error } = await supabase.from('tasks').delete().eq('id', id);
     if (error) {
       console.error('Lỗi xóa công việc:', error);
-      alert('Lỗi xóa dữ liệu trên Database: ' + error.message);
+      showToast('Lỗi xóa dữ liệu trên Database: ' + error.message, 'error');
     }
   }
   async function sbDeleteReview(id) {
@@ -451,7 +451,7 @@ export function AppProvider({ children }) {
     const { error } = await supabase.from('weekly_reviews').delete().eq('id', id);
     if (error) {
       console.error('Lỗi xóa đánh giá:', error);
-      alert('Lỗi xóa dữ liệu trên Database: ' + error.message);
+      showToast('Lỗi xóa dữ liệu trên Database: ' + error.message, 'error');
     }
   }
 

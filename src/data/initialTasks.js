@@ -12,8 +12,8 @@ export const CATEGORIES = {
 };
 
 export const PERSONS = {
-  MALE: { label: 'Nam', color: '#6C5CE7', bg: '#f0eeff', emoji: '👦' },
-  FEMALE: { label: 'Nữ', color: '#E27387', bg: '#fceef1', emoji: '👧' },
+  MALE: { label: 'Anh ấy', color: '#6C5CE7', bg: '#f0eeff', emoji: '👦' },
+  FEMALE: { label: 'Cô ấy', color: '#E27387', bg: '#fceef1', emoji: '👧' },
   BOTH: { label: 'Cả hai', color: '#00B894', bg: '#e8faf4', emoji: '💑' },
 };
 

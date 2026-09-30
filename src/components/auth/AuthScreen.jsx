@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { Heart, Sparkles, User, Lock, Tag, Users, CheckCircle } from 'lucide-react';
 
@@ -8,6 +8,14 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    const originalTheme = document.body.className;
+    document.body.className = 'theme-minimal';
+    return () => {
+      document.body.className = originalTheme;
+    };
+  }, []);
 
   // Form states
   const [username, setUsername] = useState('');
@@ -153,14 +161,14 @@ export default function AuthScreen() {
                     onClick={() => setGender('MALE')}
                     className={`flex-1 py-3 rounded-2xl border ${gender === 'MALE' ? 'bg-sky-500/20 border-sky-400 text-sky-300' : 'bg-white/5 border-white/10 text-zinc-400'} transition-all font-semibold`}
                   >
-                    👦 Nam
+                    👦 Anh ấy
                   </button>
                   <button
                     type="button"
                     onClick={() => setGender('FEMALE')}
                     className={`flex-1 py-3 rounded-2xl border ${gender === 'FEMALE' ? 'bg-rose-500/20 border-rose-400 text-rose-300' : 'bg-white/5 border-white/10 text-zinc-400'} transition-all font-semibold`}
                   >
-                    👧 Nữ
+                    👧 Cô ấy
                   </button>
                 </div>
               </>

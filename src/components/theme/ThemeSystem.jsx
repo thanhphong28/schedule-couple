@@ -262,6 +262,9 @@ export default function ThemeSystem() {
     if (currentWp) {
       if (currentWp.url === 'aurora') {
         bgStyle = { background: 'radial-gradient(circle at 30% 30%, #f43f5e 0%, #8b5cf6 50%, #09090b 100%)' };
+      } else if (currentWp.is_custom) {
+        // Render custom wallpapers as-is without styles, handled manually in JSX
+        bgStyle = { background: '#09090b' }; 
       } else {
         bgStyle = { backgroundImage: `url(${currentWp.url})`, backgroundSize: 'cover', backgroundPosition: 'center' };
       }
@@ -281,10 +284,23 @@ export default function ThemeSystem() {
       case 'surprise':
         bgStyle = { backgroundImage: 'url(/themes/surprise.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' };
         break;
+      case 'minimal':
+        bgStyle = { 
+          background: `
+            radial-gradient(circle at 50% 0%, rgba(244, 63, 94, 0.25) 0%, transparent 50%),
+            radial-gradient(circle at 0% 100%, rgba(139, 92, 246, 0.2) 0%, transparent 50%),
+            radial-gradient(circle at 100% 100%, rgba(14, 165, 233, 0.15) 0%, transparent 50%),
+            #09090b
+          `
+        };
+        break;
       default:
         bgStyle = { background: '#09090b' };
     }
   }
+
+  const currentWp = wallpaper ? WALLPAPERS.find(w => w.id === wallpaper) : null;
+  const isCustom = currentWp?.is_custom;
 
   return (
     <div className="fixed inset-0 pointer-events-none -z-50 transition-colors duration-1000">
@@ -294,8 +310,30 @@ export default function ThemeSystem() {
         style={bgStyle}
       />
       
+      {/* 1.5 Custom Wallpaper rendering (optimized for portrait images on desktop) */}
+      {isCustom && (
+        <>
+          {/* Blurred full-width background */}
+          <div 
+            className="absolute inset-0 transition-all duration-1000"
+            style={{ backgroundImage: `url(${currentWp.url})`, backgroundSize: 'cover', backgroundPosition: 'center', filter: 'blur(30px) brightness(0.6)' }}
+          />
+          {/* Constrained clear background (keeps portrait aspect ratio matching the app container) */}
+          <div className="absolute inset-0 w-full max-w-md md:max-w-xl mx-auto flex items-center justify-center overflow-hidden shadow-2xl">
+            <div 
+              className="absolute inset-0 transition-all duration-1000"
+              style={{ backgroundImage: `url(${currentWp.url})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+            />
+          </div>
+        </>
+      )}
+      
       {/* 2. Base Dim Scrim (ensures text legibility) */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] transition-all duration-1000"></div>
+      {themeId === 'minimal' && !isCustom ? (
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-30 z-0 pointer-events-none mix-blend-screen transition-all duration-1000" />
+      ) : (
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] transition-all duration-1000"></div>
+      )}
 
       {/* 3. Ambient Animations based on Theme */}
       <div className="absolute inset-0 z-0">

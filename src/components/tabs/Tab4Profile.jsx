@@ -5,6 +5,7 @@ import { useApp, PRESET_WALLPAPERS } from '../../context/AppContext.jsx';
 import { supabase } from '../../lib/supabase.js';
 import { compressImage } from '../../lib/utils.js';
 import { showToast } from '../shared/Toast.jsx';
+import ConfirmModal from '../shared/ConfirmModal.jsx';
 
 import { LogOut, Palette, Link as LinkIcon, User, Camera } from 'lucide-react';
 
@@ -30,6 +31,7 @@ export default function Tab4Profile() {
   
   // Edit Profile
   const [showEditModal, setShowEditModal] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false });
   const [editDisplayName, setEditDisplayName] = useState(user?.display_name || '');
   const [editGender, setEditGender] = useState(user?.gender || 'MALE');
 
@@ -156,21 +158,29 @@ export default function Tab4Profile() {
   };
 
   const handleDisconnect = async () => {
-    if (!window.confirm('Bạn có chắc chắn muốn hủy kết nối không? (Hai người sẽ không còn chung lịch trình nữa)')) return;
-    setLoading(true);
-    try {
-       if (user.couple_id) {
-         const { error } = await supabase.from('couples').delete().eq('id', user.couple_id);
-         if (error) throw error;
-       }
-       
-       await supabase.from('users').update({ couple_id: null }).eq('id', user.id);
-       showToast('Đã hủy kết nối thành công. 💔', 'success');
-       await refreshAuth();
-    } catch (e) {
-       showToast('Lỗi hủy kết nối: ' + e.message, 'error');
-    }
-    setLoading(false);
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Hủy kết nối',
+      message: 'Bạn có chắc chắn muốn hủy kết nối không? (Hai người sẽ không còn chung lịch trình nữa)',
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmConfig({ isOpen: false });
+        setLoading(true);
+        try {
+           if (user.couple_id) {
+             const { error } = await supabase.from('couples').delete().eq('id', user.couple_id);
+             if (error) throw error;
+           }
+           
+           await supabase.from('users').update({ couple_id: null }).eq('id', user.id);
+           showToast('Đã hủy kết nối thành công. 💔', 'success');
+           await refreshAuth();
+        } catch (e) {
+           showToast('Lỗi hủy kết nối: ' + e.message, 'error');
+        }
+        setLoading(false);
+      }
+    });
   };
 
   const handleAvatarUpload = async (e) => {
@@ -399,7 +409,16 @@ export default function Tab4Profile() {
                     className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-zinc-300 hover:text-rose-400 hover:bg-black/80 transition-colors"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (window.confirm('Xóa ảnh nền này?')) deleteCustomWallpaper(wp.id);
+                      setConfirmConfig({
+                        isOpen: true,
+                        title: 'Xóa ảnh nền',
+                        message: 'Bạn có chắc chắn muốn xóa ảnh nền này không?',
+                        isDanger: true,
+                        onConfirm: () => {
+                          deleteCustomWallpaper(wp.id);
+                          setConfirmConfig({ isOpen: false });
+                        }
+                      });
                     }}
                   >
                     <span className="text-xs">✕</span>
@@ -410,6 +429,15 @@ export default function Tab4Profile() {
           </div>
         </div>
       </section>
+
+      <ConfirmModal 
+        isOpen={confirmConfig.isOpen}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        isDanger={confirmConfig.isDanger}
+        onConfirm={confirmConfig.onConfirm}
+        onCancel={() => setConfirmConfig({ isOpen: false })}
+      />
 
       {/* Account Actions */}
       <section className="glass-panel rounded-[28px] border border-white/10 shadow-lg overflow-hidden">
@@ -549,3 +577,4 @@ export default function Tab4Profile() {
     </div>
   );
 }
+

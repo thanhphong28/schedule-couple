@@ -8,21 +8,6 @@ import { showToast } from '../components/shared/Toast.jsx';
 
 const AppContext = createContext(null);
 
-const LS_TASKS = 'sc_tasks_v2';
-const LS_REVIEWS = 'sc_reviews_v2';
-const LS_CUSTOM_WP = 'sc_custom_wallpapers_v1';
-const LS_THEME = 'sc_theme_v1';
-
-function lsGet(key) {
-  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
-}
-function lsSet(key, val) {
-  try {
-    localStorage.setItem(key, JSON.stringify(val));
-  } catch (err) {
-    console.warn('lsSet failed (QuotaExceeded?):', err);
-  }
-}
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
 async function sbGetTasks(coupleId) {
@@ -78,38 +63,23 @@ export const PRESET_WALLPAPERS = [
 
 export function AppProvider({ children }) {
   const { user, couple } = useAuth();
-  const [tasks, setTasksRaw] = useState(() => {
-    return lsGet(LS_TASKS) || [];
-  });
-  const [reviews, setReviewsRaw] = useState(() => lsGet(LS_REVIEWS) || []);
+  const [tasks, setTasks] = useState([]);
+  const [reviews, setReviews] = useState([]);
   const [activeTab, setActiveTab] = useState(0);
-  const [synced, setSynced] = useState(false); // true after first Supabase load
+  const [synced, setSynced] = useState(false);
   
   // Theme state
-  const [themeId, setThemeIdRaw] = useState(() => {
-    return user?.theme_id || localStorage.getItem(LS_THEME) || 'ocean';
-  });
+  const [themeId, setThemeIdRaw] = useState(user?.theme_id || 'ocean');
   
   // Wallpaper state
-  const [wallpaper, setWallpaperRaw] = useState(() => {
-    return user?.wallpaper_id || localStorage.getItem('sc_wallpaper') || null;
-  });
-  const [customWallpapers, setCustomWallpapers] = useState(() => {
-    return lsGet(LS_CUSTOM_WP) || [];
-  });
+  const [wallpaper, setWallpaperRaw] = useState(user?.wallpaper_id || null);
+  const [customWallpapers, setCustomWallpapers] = useState([]);
 
   function setThemeId(id) {
     setThemeIdRaw(id);
     localStorage.setItem(LS_THEME, id);
     
-    // Optimistic cache update for instant refresh support
-    if (user?.id) {
-      try {
-        const cachedUser = JSON.parse(localStorage.getItem('sc_user') || '{}');
-        cachedUser.theme_id = id;
-        localStorage.setItem('sc_user', JSON.stringify(cachedUser));
-      } catch (e) {}
-    }
+    
 
     if (user?.id && isSupabaseReady) {
       supabase.from('users').update({ theme_id: id }).eq('id', user.id).then(({error}) => {
@@ -120,20 +90,9 @@ export function AppProvider({ children }) {
 
   function setWallpaper(id) {
     setWallpaperRaw(id);
-    if (id) {
-      localStorage.setItem('sc_wallpaper', id);
-    } else {
-      localStorage.removeItem('sc_wallpaper');
-    }
     
-    // Optimistic cache update for instant refresh support
-    if (user?.id) {
-      try {
-        const cachedUser = JSON.parse(localStorage.getItem('sc_user') || '{}');
-        cachedUser.wallpaper_id = id;
-        localStorage.setItem('sc_user', JSON.stringify(cachedUser));
-      } catch (e) {}
-    }
+    
+    
 
     if (user?.id && isSupabaseReady) {
       supabase.from('users').update({ wallpaper_id: id }).eq('id', user.id).then(({error}) => {
@@ -143,14 +102,7 @@ export function AppProvider({ children }) {
   }
 
   // ── Persist to localStorage ────────────────────────────────────────────────
-  function setTasks(val) {
-    setTasksRaw(val);
-    lsSet(LS_TASKS, val);
-  }
-  function setReviews(val) {
-    setReviewsRaw(val);
-    lsSet(LS_REVIEWS, val);
-  }
+
 
   // ── On mount: load from Supabase (if configured) ──────────────────────────
   useEffect(() => {
@@ -161,8 +113,8 @@ export function AppProvider({ children }) {
     if (lastCoupleId !== currentCoupleId) {
       localStorage.removeItem(LS_TASKS);
       localStorage.removeItem(LS_REVIEWS);
-      setTasksRaw([]);
-      setReviewsRaw([]);
+      setTasks([]);
+      setReviews([]);
       localStorage.setItem('sc_last_couple_id', currentCoupleId);
     }
 
@@ -170,10 +122,10 @@ export function AppProvider({ children }) {
       // Cross-tab sync via storage event
       const handler = (e) => {
         if (e.key === LS_TASKS && e.newValue) {
-          try { setTasksRaw(JSON.parse(e.newValue)); } catch {}
+          try { setTasks(JSON.parse(e.newValue)); } catch {}
         }
         if (e.key === LS_REVIEWS && e.newValue) {
-          try { setReviewsRaw(JSON.parse(e.newValue)); } catch {}
+          try { setReviews(JSON.parse(e.newValue)); } catch {}
         }
         if (e.key === LS_CUSTOM_WP && e.newValue) {
           try { setCustomWallpapers(JSON.parse(e.newValue)); } catch {}
@@ -193,14 +145,22 @@ export function AppProvider({ children }) {
     ]).then(([t, r, wps]) => {
       if (t) setTasks(t);
       if (r) setReviews(r);
-      if (wps && wps.length > 0) {
+      if (wps) {
         setCustomWallpapers(wps);
-        lsSet(LS_CUSTOM_WP, wps);
       }
       setSynced(true);
     });
+  }, [couple?.id]); // Re-run when couple changes
 
-    // Real-time subscriptions
+  useEffect(() => {
+    if (user) {
+      setThemeIdRaw(user.theme_id || 'ocean');
+      setWallpaperRaw(user.wallpaper_id || null);
+    }
+  }, [user?.id, user?.theme_id, user?.wallpaper_id]);
+
+  useEffect(() => {
+    if (!couple?.id) return;
     const taskSub = supabase
       .channel('tasks-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `couple_id=eq.${couple.id}` }, (payload) => {
@@ -229,7 +189,6 @@ export function AppProvider({ children }) {
         sbGetWallpapers(couple.id).then(wps => {
           if (wps) {
             setCustomWallpapers(wps);
-            lsSet(LS_CUSTOM_WP, wps);
           }
         }).catch(console.error);
       })
@@ -240,12 +199,9 @@ export function AppProvider({ children }) {
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${user?.id}` }, (payload) => {
         if (payload.new.theme_id) {
           setThemeIdRaw(payload.new.theme_id);
-          localStorage.setItem(LS_THEME, payload.new.theme_id);
         }
         if (payload.new.wallpaper_id !== undefined) {
           setWallpaperRaw(payload.new.wallpaper_id);
-          if (payload.new.wallpaper_id) localStorage.setItem('sc_wallpaper', payload.new.wallpaper_id);
-          else localStorage.removeItem('sc_wallpaper');
         }
       })
       .subscribe();
@@ -270,7 +226,6 @@ export function AppProvider({ children }) {
     };
     setCustomWallpapers(prev => {
       const next = [newWp, ...prev.filter(w => w.id !== newWp.id)];
-      lsSet(LS_CUSTOM_WP, next);
       return next;
     });
     setWallpaper(newWp.id);
@@ -281,7 +236,6 @@ export function AppProvider({ children }) {
   function deleteCustomWallpaper(id) {
     setCustomWallpapers(prev => {
       const next = prev.filter(w => w.id !== id);
-      lsSet(LS_CUSTOM_WP, next);
       return next;
     });
     if (wallpaper === id) {
@@ -602,3 +556,9 @@ export function useApp() {
   if (!ctx) throw new Error('useApp must be used within AppProvider');
   return ctx;
 }
+
+
+
+
+
+

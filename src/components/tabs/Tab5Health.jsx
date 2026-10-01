@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useCycle } from '../../hooks/useCycle.js';
-import { HeartPulse, CalendarClock, Droplets, Smile, Frown, Coffee, Info, EyeOff, ShieldCheck, ChevronLeft, ChevronRight, Settings } from 'lucide-react';
+import { HeartPulse, CalendarClock, Droplets, Smile, Frown, Coffee, Info, EyeOff, ShieldCheck, ChevronLeft, ChevronRight, Settings, BarChart2, AlertTriangle, CheckCircle } from 'lucide-react';
 
 // ==========================================
 // COMPONENT: ONBOARDING CHO BẠN NỮ
@@ -55,7 +55,7 @@ function Onboarding({ onComplete }) {
 // ==========================================
 // COMPONENT: LỊCH CHU KỲ (CALENDAR)
 // ==========================================
-function HealthCalendar({ cycles, getInsightForDate, selectedDateStr, onSelectDate }) {
+function HealthCalendar({ cycles, getInsightForDate, getCalendarStatus, selectedDateStr, onSelectDate, onMonthChange }) {
   const [currentDate, setCurrentDate] = useState(() => new Date(selectedDateStr));
   
   const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
@@ -63,8 +63,15 @@ function HealthCalendar({ cycles, getInsightForDate, selectedDateStr, onSelectDa
   // Điều chỉnh để T2 là ngày đầu tuần
   const startDay = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1;
 
-  const prevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
-  const nextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+  const goToMonth = (newDate) => {
+    setCurrentDate(newDate);
+    // Notify parent of the month key "YYYY-MM"
+    const key = `${newDate.getFullYear()}-${String(newDate.getMonth() + 1).padStart(2, '0')}`;
+    onMonthChange?.(key);
+  };
+
+  const prevMonth = () => goToMonth(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+  const nextMonth = () => goToMonth(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
 
   const monthNames = ["Tháng 1", "Tháng 2", "Tháng 3", "Tháng 4", "Tháng 5", "Tháng 6", "Tháng 7", "Tháng 8", "Tháng 9", "Tháng 10", "Tháng 11", "Tháng 12"];
   const dayNames = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
@@ -73,34 +80,16 @@ function HealthCalendar({ cycles, getInsightForDate, selectedDateStr, onSelectDa
     const today = new Date().toISOString().split('T')[0];
     const isToday = dateStr === today;
     
-    // 1. Kiểm tra xem ngày này có nằm trong lịch sử CÓ THẬT không
-    const actualCycle = (cycles || []).find(c => {
-      if (!c.period_length) return false;
-      const diff = Math.floor((new Date(dateStr) - new Date(c.start_date)) / (1000 * 60 * 60 * 24));
-      return diff >= 0 && diff < c.period_length;
-    });
-
-    if (actualCycle) {
-      return { isToday, isPeriod: true, isPredictedPeriod: false, isOvulation: false };
-    }
-
-    // 2. Nếu không có trong lịch sử, dùng thuật toán dự đoán
-    if (!getInsightForDate) return { isToday };
+    if (!getCalendarStatus) return { isToday };
     
-    const insight = getInsightForDate(dateStr);
-    if (!insight) return { isToday };
-
-    // Không dự đoán kỳ kinh vào quá khứ (trước today) nếu không có data thật
-    const isPeriod = insight.currentPhase === 'menstruation';
-    const isPredictedPeriod = isPeriod && dateStr > today;
-    const isActualPeriod = isPeriod && dateStr <= today;
-    const isOvulation = insight.currentPhase === 'ovulation';
-
+    const status = getCalendarStatus(dateStr);
+    
     return { 
       isToday, 
-      isPeriod: isActualPeriod, 
-      isPredictedPeriod, 
-      isOvulation 
+      isPeriod: status.isPeriod, 
+      isPredictedPeriod: status.isPredicted, 
+      isOvulation: status.isOvulation,
+      isExcluded: status.isExcluded
     };
   };
 
@@ -137,12 +126,17 @@ function HealthCalendar({ cycles, getInsightForDate, selectedDateStr, onSelectDa
           
           let bgClass = "bg-transparent text-zinc-300 hover:bg-zinc-800 cursor-pointer";
           let borderClass = "border border-transparent";
+          let textDecoration = "";
           
-          if (status?.isPeriod) {
+          if (status?.isExcluded) {
+             // Visual cue for explicitly removed date inside a period
+             bgClass = "bg-zinc-900 text-zinc-500 cursor-pointer line-through opacity-70";
+             borderClass = "border border-zinc-800 border-dashed";
+          } else if (status?.isPeriod) {
             bgClass = "bg-rose-500/20 text-rose-400 font-bold";
             borderClass = "border border-rose-500/50";
           } else if (status?.isPredictedPeriod) {
-            bgClass = "bg-pink-500/10 text-pink-300 border-dashed border border-pink-500/40";
+            bgClass = "bg-pink-500/30 text-pink-100 border-dashed border-2 border-pink-400 font-bold shadow-[inset_0_0_8px_rgba(236,72,153,0.3)]";
           } else if (status?.isOvulation) {
             bgClass = "bg-purple-500/20 text-purple-300";
             borderClass = "border border-purple-500/50";
@@ -150,7 +144,8 @@ function HealthCalendar({ cycles, getInsightForDate, selectedDateStr, onSelectDa
 
           if (isSelected) {
             borderClass = "border-2 border-white shadow-[0_0_10px_rgba(255,255,255,0.5)]";
-            bgClass += " font-black";
+            bgClass = bgClass.replace('bg-transparent', 'bg-zinc-800'); // Ensure visibility if transparent
+            bgClass += " font-black z-10 scale-110";
           } else if (status?.isToday) {
             borderClass = "border border-white/50 ring-1 ring-rose-500/20";
             bgClass += " font-black";
@@ -160,9 +155,9 @@ function HealthCalendar({ cycles, getInsightForDate, selectedDateStr, onSelectDa
             <button 
               key={day} 
               onClick={() => onSelectDate(dateStr)}
-              className={`h-9 flex items-center justify-center rounded-xl text-xs transition-colors focus:outline-none ${bgClass} ${borderClass}`}
+              className={`h-9 flex items-center justify-center rounded-xl text-xs transition-all focus:outline-none ${bgClass} ${borderClass}`}
             >
-              {day}
+              <span className={status?.isExcluded ? "line-through" : ""}>{day}</span>
             </button>
           );
         })}
@@ -172,6 +167,7 @@ function HealthCalendar({ cycles, getInsightForDate, selectedDateStr, onSelectDa
       <div className="flex flex-wrap items-center justify-center gap-3 mt-4 pt-4 border-t border-zinc-800/50 text-[10px] font-medium text-zinc-400">
         <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-rose-500/50 border border-rose-500"></div> Hành kinh</div>
         <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-pink-500/20 border border-pink-500 border-dashed"></div> Dự kiến</div>
+        <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-zinc-900 border border-zinc-800 border-dashed line-through"></div> Đã xóa</div>
         <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-purple-500/40 border border-purple-500"></div> Rụng trứng</div>
       </div>
     </div>
@@ -179,15 +175,43 @@ function HealthCalendar({ cycles, getInsightForDate, selectedDateStr, onSelectDa
 }
 
 // ==========================================
+// MAPPING TRIỆU CHỨNG
+// ==========================================
+const SYMPTOM_OPTIONS = [
+  { id: 'cramps', icon: '😣', label: 'Đau bụng' },
+  { id: 'mood', icon: '😤', label: 'Dễ cáu' },
+  { id: 'fatigue', icon: '🥱', label: 'Mệt mỏi' },
+  { id: 'cravings', icon: '🤤', label: 'Thèm ăn' },
+  { id: 'sensitive', icon: '🥺', label: 'Tủi thân' },
+  { id: 'headache', icon: '🤕', label: 'Đau đầu' },
+  { id: 'sleepy', icon: '😴', label: 'Buồn ngủ' },
+  { id: 'happy', icon: '🥰', label: 'Vui vẻ' },
+  { id: 'nausea', icon: '🤢', label: 'Buồn nôn' },
+  { id: 'sad', icon: '😢', label: 'Buồn bã' },
+  { id: 'stressed', icon: '😫', label: 'Căng thẳng' },
+  { id: 'lonely', icon: '🥺', label: 'Cô đơn' },
+  { id: 'anxious', icon: '😰', label: 'Lo âu' },
+  { id: 'angry', icon: '🤬', label: 'Giận dữ' },
+  { id: 'romantic', icon: '😘', label: 'Lãng mạn' },
+  { id: 'bloated', icon: '🎈', label: 'Đầy hơi' },
+  { id: 'backpain', icon: '🦴', label: 'Đau lưng' }
+];
+
+// ==========================================
 // MAIN COMPONENT
 // ==========================================
 export default function Tab5Health() {
-  const { isFemale, isMale, isLoading, getInsightForDate, actions, profile, cycles } = useCycle();
+  const { isFemale, isMale, isLoading, getInsightForDate, getCalendarStatus, irregularityWarning, actions, profile, cycles, needsAnalysis, analysisResult } = useCycle();
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [selectedDateStr, setSelectedDateStr] = useState(() => new Date().toISOString().split('T')[0]);
   const [showPeriodModal, setShowPeriodModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [tempPeriodLength, setTempPeriodLength] = useState(profile?.average_period_length || 5);
+  // Track which calendar month the user is currently viewing (for context-aware warnings)
+  const [viewingMonthKey, setViewingMonthKey] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   // Lấy insight dựa trên ngày đang chọn (thay vì luôn là hôm nay)
   const insight = getInsightForDate ? getInsightForDate(selectedDateStr) : null;
@@ -246,64 +270,7 @@ export default function Tab5Health() {
         </div>
       )}
 
-      {/* PERIOD EDIT MODAL */}
-      {showPeriodModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-sm glass-panel p-6 rounded-3xl text-center">
-            <h3 className="text-lg font-bold text-white mb-2">Ghi nhận kỳ kinh</h3>
-            <p className="text-xs text-zinc-400 mb-6">Bạn đang ghi nhận cho ngày <strong className="text-rose-300">{formatDate(selectedDateStr)}</strong></p>
-            
-            <div className="mb-6 text-left">
-              <label className="block text-xs font-bold text-rose-300 mb-2">Kỳ này kéo dài khoảng bao nhiêu ngày?</label>
-              <input 
-                type="number" 
-                value={tempPeriodLength}
-                onChange={(e) => setTempPeriodLength(Number(e.target.value))}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-rose-500 transition-colors"
-                min="1" max="14"
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button onClick={() => setShowPeriodModal(false)} className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl transition-colors">
-                Hủy
-              </button>
-              <button 
-                onClick={() => {
-                  actions.startNewPeriod(selectedDateStr, tempPeriodLength);
-                  setShowPeriodModal(false);
-                }}
-                className="flex-1 py-3 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 shadow-md shadow-rose-500/20 text-white font-bold rounded-xl transition-all"
-              >
-                Lưu lại
-              </button>
-            </div>
-            
-            {/* Delete button if cycle exists on this date */}
-            {(() => {
-              const activeCycle = cycles.find(c => {
-                if (!c.period_length) return false;
-                const diff = Math.floor((new Date(selectedDateStr) - new Date(c.start_date)) / (1000 * 60 * 60 * 24));
-                return diff >= 0 && diff < c.period_length;
-              });
-              if (activeCycle) {
-                return (
-                  <button 
-                    onClick={() => {
-                      actions.deletePeriod(selectedDateStr);
-                      setShowPeriodModal(false);
-                    }}
-                    className="mt-4 w-full py-2 text-xs text-rose-500 hover:text-rose-400 font-bold transition-colors"
-                  >
-                    Xóa ngày kinh này khỏi chu kỳ
-                  </button>
-                );
-              }
-              return null;
-            })()}
-          </div>
-        </div>
-      )}
+      {/* MODAL IS NO LONGER NEEDED AS ACTION IS DIRECT */}
 
       {/* DASHBOARD NỮ */}
       {isFemale && (
@@ -326,8 +293,10 @@ export default function Tab5Health() {
               <HealthCalendar 
                 cycles={cycles}
                 getInsightForDate={getInsightForDate}
+                getCalendarStatus={getCalendarStatus}
                 selectedDateStr={selectedDateStr}
                 onSelectDate={setSelectedDateStr}
+                onMonthChange={setViewingMonthKey}
               />
 
                <div className="flex justify-between items-center px-1">
@@ -337,12 +306,97 @@ export default function Tab5Health() {
                    </h2>
                    <p className="text-xs text-zinc-400">Ngày thứ {insight?.cycleDay > 0 ? insight?.cycleDay : '--'} của chu kỳ</p>
                  </div>
-                 <button 
-                  onClick={() => setShowPeriodModal(true)}
-                  className="px-4 py-2 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 shadow-md shadow-rose-500/20 text-white text-xs font-bold rounded-xl transition-all active:scale-95"
-                 >
-                   + Kinh nguyệt
-                 </button>
+                 
+                 <div className="flex gap-2">
+                   {insight?.isConfirmedPeriod ? (
+                     <button 
+                       onClick={() => actions.togglePeriodDay(selectedDateStr)}
+                       className="px-4 py-2 bg-zinc-800/80 hover:bg-zinc-700 text-rose-500 border border-rose-500/30 text-xs font-bold rounded-xl transition-all active:scale-95"
+                     >
+                       - Xóa ngày
+                     </button>
+                   ) : (
+                     <button 
+                       onClick={() => actions.togglePeriodDay(selectedDateStr)}
+                       className="px-4 py-2 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 shadow-md shadow-rose-500/20 text-white text-xs font-bold rounded-xl transition-all active:scale-95"
+                     >
+                       + Kinh nguyệt
+                     </button>
+                   )}
+                 </div>
+              </div>
+
+              {/* PHÂN TÍCH CHU KỲ (Dựa trên 3 chu kỳ gần nhất) */}
+              <div className="glass-panel p-5 rounded-3xl mt-4 mb-4 border border-rose-500/20 shadow-[0_8px_30px_rgba(244,63,94,0.05)]">
+                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                  <BarChart2 size={16} className="text-rose-400"/> Phân tích chu kỳ
+                </h3>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="bg-zinc-900/50 p-3 rounded-2xl flex flex-col justify-center items-center text-center border border-zinc-800/50">
+                    <span className="text-xl font-black text-white">{profile?.average_cycle_length || 28}</span>
+                    <span className="text-[10px] text-zinc-400 font-medium">Vòng kinh (ngày)</span>
+                  </div>
+                  <div className="bg-zinc-900/50 p-3 rounded-2xl flex flex-col justify-center items-center text-center border border-zinc-800/50">
+                    <span className="text-xl font-black text-rose-400">{profile?.average_period_length || 5}</span>
+                    <span className="text-[10px] text-zinc-400 font-medium">Hành kinh (ngày)</span>
+                  </div>
+                </div>
+                {irregularityWarning ? (
+                  <div className="flex gap-2 items-start bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                    <AlertTriangle size={14} className="text-amber-500 mt-0.5 shrink-0" />
+                    <p className="text-[11px] text-amber-200/90 leading-relaxed font-medium">{irregularityWarning}</p>
+                  </div>
+                ) : cycles.length >= 3 ? (
+                  <div className="flex gap-2 items-start bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20">
+                    <CheckCircle size={14} className="text-emerald-500 mt-0.5 shrink-0" />
+                    <p className="text-[11px] text-emerald-200/90 leading-relaxed font-medium">Chu kỳ của bạn đang rất đều đặn dựa trên 3 tháng gần nhất.</p>
+                  </div>
+                ) : (
+                  <div className="flex gap-2 items-start bg-zinc-800/50 p-3 rounded-xl border border-zinc-700/50">
+                    <Info size={14} className="text-zinc-400 mt-0.5 shrink-0" />
+                    <p className="text-[11px] text-zinc-400 leading-relaxed font-medium">Cần ghi nhận ít nhất 3 chu kỳ để hệ thống đánh giá mức độ đều đặn.</p>
+                  </div>
+                )}
+                
+                {cycles.length >= 1 && (
+                  <button 
+                    onClick={() => needsAnalysis && actions.forceAnalyzeCycles()}
+                    disabled={!needsAnalysis}
+                    className={`w-full mt-3 py-2.5 text-[12px] font-bold rounded-xl transition-all flex items-center justify-center gap-2 border ${
+                      needsAnalysis
+                        ? 'bg-gradient-to-r from-rose-600/80 to-pink-600/80 hover:from-rose-500 hover:to-pink-500 text-white border-rose-500/40 shadow-lg shadow-rose-500/20 active:scale-95 cursor-pointer'
+                        : 'bg-zinc-900/60 text-zinc-600 border-zinc-800/50 cursor-not-allowed'
+                    }`}
+                  >
+                    {needsAnalysis ? '🔍 Bắt đầu phân tích & Cập nhật lịch' : '✔️ Đã phân tích — Chỉnh sửa thêm để phân tích lại'}
+                  </button>
+                )}
+
+                {/* WARNINGS FROM LAST ANALYSIS — filtered to the month being viewed */}
+                {(() => {
+                  const monthWarnings = (analysisResult?.warnings || []).filter(w =>
+                    // 'hormonal' warnings have a month key embedded in the message
+                    // Others (cycle variability) always show
+                    !w.monthKey || w.monthKey === viewingMonthKey
+                  );
+                  if (monthWarnings.length === 0) return null;
+                  return (
+                    <div className="mt-3 space-y-2">
+                      {monthWarnings.map((w, i) => (
+                        <div key={i} className={`p-3 rounded-xl border ${
+                          w.severity === 'high'
+                            ? 'bg-red-500/10 border-red-500/30'
+                            : 'bg-amber-500/10 border-amber-500/25'
+                        }`}>
+                          <div className={`text-[11px] font-bold mb-1.5 ${ w.severity === 'high' ? 'text-red-300' : 'text-amber-300'}`}>
+                            {w.severity === 'high' ? '⚠️' : 'ℹ️'} {w.message}
+                          </div>
+                          <p className="text-[10px] text-zinc-400 leading-relaxed">{w.advice}</p>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* LỜI KHUYÊN Y KHOA DÀNH CHO NỮ */}
@@ -383,27 +437,23 @@ export default function Tab5Health() {
                   <Smile size={16} className="text-amber-400"/> Bạn cảm thấy thế nào?
                 </h3>
                 <div className="grid grid-cols-3 gap-2">
-                  <button 
-                    onClick={() => actions.logSymptom(selectedDateStr, 'cramps', 'moderate')}
-                    className="py-2.5 px-2 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-2xl flex flex-col items-center gap-1.5 transition-colors border border-transparent hover:border-zinc-700"
-                  >
-                    <span className="text-xl">😣</span>
-                    <span className="text-[10px] text-zinc-300 font-medium">Đau bụng</span>
-                  </button>
-                  <button 
-                    onClick={() => actions.logSymptom(selectedDateStr, 'mood', 'moderate')}
-                    className="py-2.5 px-2 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-2xl flex flex-col items-center gap-1.5 transition-colors border border-transparent hover:border-zinc-700"
-                  >
-                    <span className="text-xl">😤</span>
-                    <span className="text-[10px] text-zinc-300 font-medium">Dễ cáu</span>
-                  </button>
-                  <button 
-                    onClick={() => actions.logSymptom(selectedDateStr, 'fatigue', 'moderate')}
-                    className="py-2.5 px-2 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-2xl flex flex-col items-center gap-1.5 transition-colors border border-transparent hover:border-zinc-700"
-                  >
-                    <span className="text-xl">🥱</span>
-                    <span className="text-[10px] text-zinc-300 font-medium">Mệt mỏi</span>
-                  </button>
+                  {SYMPTOM_OPTIONS.map(symp => {
+                    const isSelected = insight?.symptomsToday?.some(s => s.symptom_type === symp.id);
+                    return (
+                      <button 
+                        key={symp.id}
+                        onClick={() => actions.logSymptom(selectedDateStr, symp.id, 'moderate')}
+                        className={`py-2.5 px-2 rounded-2xl flex flex-col items-center gap-1.5 transition-all border ${
+                          isSelected 
+                            ? 'bg-rose-500/20 border-rose-500/50 text-rose-300' 
+                            : 'bg-zinc-800/50 hover:bg-zinc-700/50 border-transparent hover:border-zinc-700 text-zinc-300'
+                        }`}
+                      >
+                        <span className="text-xl">{symp.icon}</span>
+                        <span className="text-[10px] font-medium">{symp.label}</span>
+                      </button>
+                    )
+                  })}
                 </div>
                 
               </div>
@@ -452,6 +502,7 @@ export default function Tab5Health() {
               <HealthCalendar 
                 cycles={cycles}
                 getInsightForDate={getInsightForDate}
+                getCalendarStatus={getCalendarStatus}
                 selectedDateStr={selectedDateStr}
                 onSelectDate={setSelectedDateStr}
               />
@@ -505,20 +556,27 @@ export default function Tab5Health() {
               )}
 
               {/* SYMPTOMS LOGGED */}
-              {insight?.canViewSymptoms && insight?.symptomsToday?.length > 0 && (
-                <div className="glass-panel p-5 rounded-3xl mt-2 border-dashed border-rose-500/30">
-                  <h3 className="text-xs font-bold text-rose-300 mb-3 flex items-center gap-2 uppercase tracking-wide">
-                    <Frown size={14} /> Cô ấy vừa ghi nhận hôm nay
-                  </h3>
+              <div className="glass-panel p-5 rounded-3xl mt-4 border-dashed border-rose-500/30">
+                <h3 className="text-xs font-bold text-rose-300 mb-3 flex items-center gap-2 uppercase tracking-wide">
+                  <Smile size={14} /> Trạng thái của cô ấy hôm nay
+                </h3>
+                {insight?.symptomsToday?.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
-                    {insight.symptomsToday.map(s => (
-                      <span key={s.id} className="px-3 py-1.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs text-rose-200 font-medium shadow-sm">
-                        {s.symptom_type === 'cramps' ? '😣 Đau bụng' : s.symptom_type === 'mood' ? '😤 Cáu gắt' : s.symptom_type === 'fatigue' ? '🥱 Mệt mỏi' : s.symptom_type}
-                      </span>
-                    ))}
+                    {insight.symptomsToday.map(s => {
+                      const sympConfig = SYMPTOM_OPTIONS.find(opt => opt.id === s.symptom_type) || { icon: '•', label: s.symptom_type };
+                      return (
+                        <span key={s.id} className="px-3 py-1.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs text-rose-200 font-medium shadow-sm flex items-center gap-1">
+                          {sympConfig.icon} {sympConfig.label}
+                        </span>
+                      );
+                    })}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <p className="text-[11px] text-zinc-500 font-medium italic">
+                    Hôm nay cô ấy chưa ghi nhận cảm xúc hay triệu chứng nào.
+                  </p>
+                )}
+              </div>
         </>
       )}
     </div>

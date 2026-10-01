@@ -111,28 +111,9 @@ export function AppProvider({ children }) {
     const lastCoupleId = localStorage.getItem('sc_last_couple_id');
     
     if (lastCoupleId !== currentCoupleId) {
-      localStorage.removeItem(LS_TASKS);
-      localStorage.removeItem(LS_REVIEWS);
       setTasks([]);
       setReviews([]);
       localStorage.setItem('sc_last_couple_id', currentCoupleId);
-    }
-
-    if (!isSupabaseReady) {
-      // Cross-tab sync via storage event
-      const handler = (e) => {
-        if (e.key === LS_TASKS && e.newValue) {
-          try { setTasks(JSON.parse(e.newValue)); } catch {}
-        }
-        if (e.key === LS_REVIEWS && e.newValue) {
-          try { setReviews(JSON.parse(e.newValue)); } catch {}
-        }
-        if (e.key === LS_CUSTOM_WP && e.newValue) {
-          try { setCustomWallpapers(JSON.parse(e.newValue)); } catch {}
-        }
-      };
-      window.addEventListener('storage', handler);
-      return () => window.removeEventListener('storage', handler);
     }
 
     // Load initial data from Supabase

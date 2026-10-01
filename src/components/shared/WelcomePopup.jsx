@@ -94,8 +94,7 @@ export function WelcomePopup() {
           </div>
 
           <div>
-            <h2 className="text-xl font-black text-white tracking-tight">Chào ngày mới hai đứa! ☀️</h2>
-            <p className="text-xs text-rose-300 font-bold mt-0.5">Phong & Thi 💕</p>
+            <h2 className="text-xl font-black text-white tracking-tight">Chào ngày mới! ☀️</h2>
           </div>
           
           <div className="space-y-2.5 text-xs text-zinc-200">

@@ -37,7 +37,7 @@ function NotificationModal({ onClose }) {
               <span>🔔</span>
               <span>Thông báo nhắc nhở việc</span>
             </h3>
-            <p className="text-[11px] text-zinc-400 mt-0.5">Nhắc trước 5 phút & đúng giờ cho Phong & Thi</p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">Nhắc trước 5 phút & đúng giờ cho 2 bạn</p>
           </div>
           <button 
             type="button" 

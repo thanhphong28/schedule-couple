@@ -2,7 +2,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { getInitialTasks } from '../data/initialTasks.js';
 import { isSupabaseReady, supabase } from '../lib/supabase.js';
-import { nanoid, playNotificationChime } from '../lib/utils.js';
+import { nanoid, playNotificationChime, lsGet, lsSet } from '../lib/utils.js';
 import { useAuth } from './AuthContext.jsx';
 import { showToast } from '../components/shared/Toast.jsx';
 
@@ -77,7 +77,7 @@ export function AppProvider({ children }) {
 
   function setThemeId(id) {
     setThemeIdRaw(id);
-    localStorage.setItem(LS_THEME, id);
+    localStorage.setItem('sc_theme', id);
     
     
 
@@ -241,6 +241,14 @@ export function AppProvider({ children }) {
   const addNotificationToHistory = (notif) => {
     setNotificationHistory(prev => {
       const next = [notif, ...prev].slice(0, 20); // Keep last 20
+      lsSet('sc_notif_history', next);
+      return next;
+    });
+  };
+
+  const clearNotification = (id) => {
+    setNotificationHistory(prev => {
+      const next = prev.filter(n => n.id !== id);
       lsSet('sc_notif_history', next);
       return next;
     });
@@ -547,7 +555,7 @@ export function AppProvider({ children }) {
     customWallpapers, addCustomWallpaper, deleteCustomWallpaper,
     WALLPAPERS: allWallpapers,
     activeNotification, dismissNotification, triggerTestNotification,
-    notifPermission, requestNotifPermission, notificationHistory,
+    notifPermission, requestNotifPermission, notificationHistory, clearNotification,
     synced,
   };
 

@@ -9,7 +9,8 @@ function NotificationModal({ onClose }) {
     notifPermission, 
     requestNotifPermission, 
     triggerTestNotification,
-    notificationHistory
+    notificationHistory,
+    clearNotification
   } = useApp();
 
   const [testing, setTesting] = useState(false);
@@ -97,7 +98,12 @@ function NotificationModal({ onClose }) {
               {notificationHistory?.length > 0 ? (
                 <div className="space-y-2">
                   {notificationHistory.map((notif) => (
-                    <div key={notif.id} className="p-3 rounded-2xl bg-zinc-900/60 border border-white/10 flex items-start gap-3">
+                    <div 
+                      key={notif.id} 
+                      onClick={() => clearNotification(notif.id)}
+                      className="p-3 rounded-2xl bg-zinc-900/60 border border-white/10 flex items-start gap-3 cursor-pointer hover:bg-zinc-800/80 transition-colors active:scale-[0.98]"
+                      title="Nhấn để xoá thông báo này"
+                    >
                       <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 ${
                         notif.isDue 
                           ? 'bg-emerald-500/20 text-emerald-300' 

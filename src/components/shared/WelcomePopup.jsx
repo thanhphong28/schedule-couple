@@ -88,9 +88,9 @@ export function WelcomePopup() {
         </button>
 
         <div className="relative z-10 space-y-4 pt-2">
-          {/* Avatar Capsule */}
-          <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center shadow-lg shadow-rose-500/30">
-            <Sparkles className="text-white" size={28} />
+          {/* Avatar Capsule -> 3D Logo */}
+          <div className="mx-auto inline-flex items-center justify-center w-20 h-20 rounded-[24px] bg-gradient-to-tr from-rose-500 to-pink-500 shadow-[0_0_40px_rgba(244,63,94,0.4)] mb-2 transform -rotate-6 transition-transform hover:rotate-0 duration-300">
+            <Heart size={40} className="text-white animate-heartbeat" fill="currentColor" />
           </div>
 
           <div>

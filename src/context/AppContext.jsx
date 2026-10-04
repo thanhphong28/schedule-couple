@@ -227,6 +227,9 @@ export function AppProvider({ children }) {
 
   // ── Browser & In-App Notifications ──────────────────────────────────────────
   const [activeNotification, setActiveNotification] = useState(null);
+  const [notificationHistory, setNotificationHistory] = useState(() => {
+    return lsGet('sc_notif_history') || [];
+  });
   const [notifPermission, setNotifPermission] = useState(() => {
     return typeof window !== 'undefined' && 'Notification' in window
       ? Notification.permission
@@ -234,6 +237,14 @@ export function AppProvider({ children }) {
   });
 
   const dismissNotification = () => setActiveNotification(null);
+
+  const addNotificationToHistory = (notif) => {
+    setNotificationHistory(prev => {
+      const next = [notif, ...prev].slice(0, 20); // Keep last 20
+      lsSet('sc_notif_history', next);
+      return next;
+    });
+  };
 
   // Auto-dismiss banner after 8.5 seconds
   useEffect(() => {
@@ -263,36 +274,47 @@ export function AppProvider({ children }) {
     // 1. Pleasant soft audio chime
     playNotificationChime();
 
-    // 2. In-App Floating Banner (guaranteed visibility on all devices)
-    setActiveNotification({
+    const notifData = {
       id: nanoid(),
       title,
       body,
       taskId,
       isDue,
       timeStr,
-    });
+      timestamp: Date.now(),
+    };
+
+    // 2. In-App Floating Banner (guaranteed visibility on all devices)
+    setActiveNotification(notifData);
+    addNotificationToHistory(notifData);
 
     // 3. System Web Notification (if permission granted by browser)
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      try {
-        const notif = new Notification(title, {
-          body,
-          icon: '/favicon.ico',
-          badge: '/favicon.ico',
-          tag: taskId ? `task-${taskId}-${isDue ? 'due' : '5m'}` : 'test',
-          requireInteraction: true,
-        });
+      const notifOptions = {
+        body,
+        icon: '/logo192.png',
+        badge: '/logo192.png',
+        tag: taskId ? `task-${taskId}-${isDue ? 'due' : '5m'}` : 'test',
+        requireInteraction: true,
+      };
 
-        notif.onclick = () => {
-          window.focus();
-          if (taskId && toggleTaskRef.current && isDue) {
-            toggleTaskRef.current(taskId);
-          }
-          notif.close();
-        };
-      } catch (err) {
-        console.warn('System notification error:', err);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then(registration => {
+          registration.showNotification(title, notifOptions);
+        }).catch(err => console.warn('SW showNotification error:', err));
+      } else {
+        try {
+          const notif = new Notification(title, notifOptions);
+          notif.onclick = () => {
+            window.focus();
+            if (taskId && toggleTaskRef.current && isDue) {
+              toggleTaskRef.current(taskId);
+            }
+            notif.close();
+          };
+        } catch (err) {
+          console.warn('System notification error:', err);
+        }
       }
     }
   };
@@ -525,7 +547,7 @@ export function AppProvider({ children }) {
     customWallpapers, addCustomWallpaper, deleteCustomWallpaper,
     WALLPAPERS: allWallpapers,
     activeNotification, dismissNotification, triggerTestNotification,
-    notifPermission, requestNotifPermission,
+    notifPermission, requestNotifPermission, notificationHistory,
     synced,
   };
 

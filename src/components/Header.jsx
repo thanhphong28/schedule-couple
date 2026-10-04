@@ -8,7 +8,8 @@ function NotificationModal({ onClose }) {
   const { 
     notifPermission, 
     requestNotifPermission, 
-    triggerTestNotification 
+    triggerTestNotification,
+    notificationHistory
   } = useApp();
 
   const [testing, setTesting] = useState(false);
@@ -52,104 +53,137 @@ function NotificationModal({ onClose }) {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[65dvh]">
           {/* Status Box */}
-          <div className="p-3.5 rounded-2xl glass-panel border border-white/10 space-y-2">
-            <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-              Trạng thái trên thiết bị này
-            </div>
-            
-            {notifPermission === 'granted' && (
-              <div className="flex items-center gap-2.5 text-xs font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 p-2.5 rounded-xl">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Đã bật thông báo hệ thống (Web Notifications)</span>
+          {notifPermission !== 'granted' && (
+            <div className="p-3.5 rounded-2xl glass-panel border border-white/10 space-y-2">
+              <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                Trạng thái trên thiết bị này
               </div>
-            )}
+              
+              {notifPermission === 'default' && (
+                <div className="space-y-2">
+                  <div className="text-xs text-amber-200 bg-amber-500/10 border border-amber-500/25 p-2.5 rounded-xl flex items-center justify-between">
+                    <span>Chưa cấp quyền thông báo hệ thống</span>
+                    <button
+                      type="button"
+                      onClick={requestNotifPermission}
+                      className="px-3 py-1 rounded-lg text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black shadow-sm active:scale-95"
+                    >
+                      Bật ngay 🔔
+                    </button>
+                  </div>
+                </div>
+              )}
 
-            {notifPermission === 'default' && (
-              <div className="space-y-2">
-                <div className="text-xs text-amber-200 bg-amber-500/10 border border-amber-500/25 p-2.5 rounded-xl flex items-center justify-between">
-                  <span>Chưa cấp quyền thông báo hệ thống</span>
-                  <button
-                    type="button"
-                    onClick={requestNotifPermission}
-                    className="px-3 py-1 rounded-lg text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black shadow-sm active:scale-95"
-                  >
-                    Bật ngay 🔔
-                  </button>
+              {notifPermission === 'denied' && (
+                <div className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/25 p-2.5 rounded-xl leading-relaxed">
+                  ⚠️ Trình duyệt đang chặn thông báo. Bạn có thể mở <b>Cài đặt trang web</b> của trình duyệt để Cho phép thông báo nhé.
+                </div>
+              )}
+
+              {notifPermission === 'unsupported' && (
+                <div className="text-xs text-sky-300 bg-sky-500/10 border border-sky-500/25 p-2.5 rounded-xl leading-relaxed">
+                  ℹ️ Trình duyệt này không hỗ trợ Web Notification API, nhưng bạn yên tâm: <b>Banner nổi & Chuông êm</b> vẫn luôn hiển thị trực tiếp khi mở app!
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Reminders Guide OR Notification History */}
+          {notifPermission === 'granted' ? (
+            <div className="space-y-2.5">
+              <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider px-1">
+                Thông báo gần đây
+              </div>
+              {notificationHistory?.length > 0 ? (
+                <div className="space-y-2">
+                  {notificationHistory.map((notif) => (
+                    <div key={notif.id} className="p-3 rounded-2xl bg-zinc-900/60 border border-white/10 flex items-start gap-3">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 ${
+                        notif.isDue 
+                          ? 'bg-emerald-500/20 text-emerald-300' 
+                          : 'bg-rose-500/20 text-rose-300'
+                      }`}>
+                        {notif.isDue ? '⏰' : '⏳'}
+                      </div>
+                      <div className="text-xs min-w-0 flex-1">
+                        <div className="font-extrabold text-white truncate">{notif.title}</div>
+                        <div className="text-[11px] text-zinc-300 mt-0.5 leading-snug break-words">
+                          {notif.body}
+                        </div>
+                        <div className="text-[9px] text-zinc-500 mt-1 uppercase font-bold">
+                          {new Date(notif.timestamp).toLocaleString('vi-VN')}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-6 text-center text-zinc-500 text-[11px] bg-zinc-900/30 rounded-2xl border border-white/5">
+                  Chưa có thông báo nào gần đây.
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider px-1">
+                Cơ chế nhắc nhở tự động
+              </div>
+              
+              <div className="p-3 rounded-2xl bg-zinc-900/60 border border-white/10 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center text-sm font-black flex-shrink-0">
+                  ⏳
+                </div>
+                <div className="text-xs">
+                  <div className="font-extrabold text-white">Nhắc trước 5 phút</div>
+                  <div className="text-[11px] text-zinc-300 mt-0.5 leading-snug">
+                    Trước khi bắt đầu bất kỳ công việc nào 5 phút, chuông sẽ reo và gửi thông báo nhắc hai bạn chuẩn bị.
+                  </div>
                 </div>
               </div>
-            )}
 
-            {notifPermission === 'denied' && (
-              <div className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/25 p-2.5 rounded-xl leading-relaxed">
-                ⚠️ Trình duyệt đang chặn thông báo. Bạn có thể mở <b>Cài đặt trang web</b> của trình duyệt để Cho phép thông báo nhé.
+              <div className="p-3 rounded-2xl bg-zinc-900/60 border border-white/10 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-300 flex items-center justify-center text-sm font-black flex-shrink-0">
+                  ⏰
+                </div>
+                <div className="text-xs">
+                  <div className="font-extrabold text-white">Nhắc đúng giờ</div>
+                  <div className="text-[11px] text-zinc-300 mt-0.5 leading-snug">
+                    Đúng giờ bắt đầu, thông báo kèm nút "Đánh dấu hoàn thành ngay" để bạn tích xong trong 1 chạm.
+                  </div>
+                </div>
               </div>
-            )}
 
-            {notifPermission === 'unsupported' && (
-              <div className="text-xs text-sky-300 bg-sky-500/10 border border-sky-500/25 p-2.5 rounded-xl leading-relaxed">
-                ℹ️ Trình duyệt này không hỗ trợ Web Notification API, nhưng bạn yên tâm: <b>Banner nổi & Chuông êm</b> vẫn luôn hiển thị trực tiếp khi mở app!
-              </div>
-            )}
-          </div>
-
-          {/* How Reminders Work */}
-          <div className="space-y-2.5">
-            <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider px-1">
-              Cơ chế nhắc nhở tự động
-            </div>
-            
-            <div className="p-3 rounded-2xl bg-zinc-900/60 border border-white/10 flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center text-sm font-black flex-shrink-0">
-                ⏳
-              </div>
-              <div className="text-xs">
-                <div className="font-extrabold text-white">Nhắc trước 5 phút</div>
-                <div className="text-[11px] text-zinc-300 mt-0.5 leading-snug">
-                  Trước khi bắt đầu bất kỳ công việc nào 5 phút, chuông sẽ reo và gửi thông báo nhắc hai bạn chuẩn bị.
+              <div className="p-3 rounded-2xl bg-zinc-900/60 border border-white/10 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-pink-500/20 text-pink-300 flex items-center justify-center text-sm font-black flex-shrink-0">
+                  💬
+                </div>
+                <div className="text-xs">
+                  <div className="font-extrabold text-white">Thông báo kép (Kèm chuông êm)</div>
+                  <div className="text-[11px] text-zinc-300 mt-0.5 leading-snug">
+                    Phát âm thanh nhẹ nhàng + hiện banner nổi lướt từ đỉnh màn hình xuống (hoạt động kể cả khi máy không bật thông báo hệ thống).
+                  </div>
                 </div>
               </div>
             </div>
-
-            <div className="p-3 rounded-2xl bg-zinc-900/60 border border-white/10 flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-300 flex items-center justify-center text-sm font-black flex-shrink-0">
-                ⏰
-              </div>
-              <div className="text-xs">
-                <div className="font-extrabold text-white">Nhắc đúng giờ</div>
-                <div className="text-[11px] text-zinc-300 mt-0.5 leading-snug">
-                  Đúng giờ bắt đầu, thông báo kèm nút "Đánh dấu hoàn thành ngay" để bạn tích xong trong 1 chạm.
-                </div>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-2xl bg-zinc-900/60 border border-white/10 flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-pink-500/20 text-pink-300 flex items-center justify-center text-sm font-black flex-shrink-0">
-                💬
-              </div>
-              <div className="text-xs">
-                <div className="font-extrabold text-white">Thông báo kép (Kèm chuông êm)</div>
-                <div className="text-[11px] text-zinc-300 mt-0.5 leading-snug">
-                  Phát âm thanh nhẹ nhàng + hiện banner nổi lướt từ đỉnh màn hình xuống (hoạt động kể cả khi máy không bật thông báo hệ thống).
-                </div>
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* Test Button Card */}
-          <div className="pt-1">
-            <button
-              type="button"
-              disabled={testing}
-              onClick={handleTest}
-              className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-extrabold text-xs shadow-lg shadow-rose-500/25 flex items-center justify-center gap-2 active:scale-95 transition-all"
-            >
-              <span>🧪</span>
-              <span>{testing ? 'Đang gửi thông báo thử...' : 'Gửi thử thông báo mẫu ngay bây giờ'}</span>
-            </button>
-            <p className="text-[10px] text-zinc-400 text-center mt-1.5">
-              Bấm để nghe thử chuông và xem thông báo mẫu trên màn hình
-            </p>
-          </div>
+          {notifPermission !== 'granted' && (
+            <div className="pt-1">
+              <button
+                type="button"
+                disabled={testing}
+                onClick={handleTest}
+                className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-extrabold text-xs shadow-lg shadow-rose-500/25 flex items-center justify-center gap-2 active:scale-95 transition-all"
+              >
+                <span>🧪</span>
+                <span>{testing ? 'Đang gửi thông báo thử...' : 'Gửi thử thông báo mẫu ngay bây giờ'}</span>
+              </button>
+              <p className="text-[10px] text-zinc-400 text-center mt-1.5">
+                Bấm để nghe thử chuông và xem thông báo mẫu trên màn hình
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

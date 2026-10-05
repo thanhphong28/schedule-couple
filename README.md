@@ -1,152 +1,124 @@
-﻿# SCHEDULE BELONG TO THI & PHONG
-
-> Thoi khoa bieu & Ke hoach tuan danh rieng cho cap doi
-
----
-
-## Tinh nang noi bat
-
-- 📅 Lich & Hom Nay: Bang thoi khoa bieu 7 ngay × 8 khung gio + Tieu diem ngay hom nay
-- 📋 Ke hoach tuan: 43 cong viec day du, bo loc theo nguoi/loai/trang thai, them/sua/xoa
-- 📊 Dashboard: KPI dai han, bieu do Recharts, nhat ky danh gia tuan 1-5 stars
-- Real-time Sync: Dong bo ngay lap tuc giua 2 tab/2 thiet bi qua LocalStorage events
-- Supabase Ready: Cau hinh .env la co real-time sync qua internet cho 2 nguoi
-- PWA-ready: Responsive 100%, hoat dong muot tren dien thoai & may tinh
-
----
-
-## Chay local
-
-```bash
-npm install
-npm run dev
-```
-
-Mo trinh duyet tai http://localhost:5173
+<div align="center">
+  <h1 align="center">💑 Couple Schedule & Master Plan</h1>
+  <p align="center">
+    A real-time, responsive, and beautifully designed weekly planner and schedule application built for couples.
+  </p>
+  
+  <p align="center">
+    <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-blue?style=for-the-badge&logo=react" alt="React" /></a>
+    <a href="https://vitejs.dev/"><img src="https://img.shields.io/badge/Vite-8-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite" /></a>
+    <a href="https://tailwindcss.com/"><img src="https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind CSS" /></a>
+    <a href="https://supabase.com/"><img src="https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" /></a>
+  </p>
+</div>
 
 ---
 
-## Deploy len Vercel (Mien phi, co HTTPS)
+## 📖 Overview
 
-Buoc 1: Dua code len GitHub
+**Couple Schedule** is a modern, real-time web application designed to help couples manage their shared routines, tasks, and weekly goals seamlessly. Whether it's organizing household chores, tracking fitness goals, or reviewing the week's highlights, this app provides a centralized, interactive dashboard to keep everything in sync.
 
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/YOUR_USERNAME/schedule-thi-phong.git
-git branch -M main
-git push -u origin main
-```
+Built with performance, maintainability, and user experience in mind, it utilizes **React 19**, **Tailwind CSS v4**, and **Supabase** for instant synchronization across devices. It also gracefully falls back to `localStorage` when offline or without backend configuration.
 
-Buoc 2: Deploy len Vercel
+## ✨ Key Features
 
-1. Truy cap vercel.com -> Dang nhap bang GitHub
-2. Click "Add New Project" -> Chon repo
-3. Click "Deploy"
-4. Co link dang: https://schedule-thi-phong.vercel.app
+- ⚡ **Real-Time Synchronization**: Instant data updates across multiple devices and tabs using Supabase's Realtime capabilities.
+- 📱 **PWA & Mobile First**: 100% responsive design, optimized for both desktop and mobile browsing with smooth custom CSS animations.
+- 📅 **Interactive Timetable**: 7-day × 8-time-slot matrix with a dedicated "Today's Focus" view for daily alignment.
+- 📋 **Master Checklist**: Manage a comprehensive list of shared tasks with advanced filtering by Person, Category, and Status. Supports full CRUD operations.
+- 📊 **Analytical Dashboard**: Visualizes long-term KPIs and progress using interactive `recharts` charts.
+- 📓 **Weekly Journal**: A reflective space to rate the week (1-5 stars), log highlights, note areas for improvement, and document upcoming plans.
+- 🛡️ **Offline Support (Fallback)**: Seamlessly degrades to local browser storage (`localStorage`) if the backend is temporarily unavailable or not configured.
 
 ---
 
-## Cau hinh Supabase (Real-time sync qua internet)
+## 🛠️ Tech Stack
 
-Khong bat buoc – App hoat dong binh thuong voi LocalStorage ngay ca khi khong co Supabase.
-Chi can Supabase khi muon Thi va Phong dung tren 2 thiet bi khac nhau va thay doi ngay lap tuc.
-
-Buoc 1: Tao Supabase project mien phi tai supabase.com
-
-Buoc 2: Chay SQL nay trong Supabase SQL Editor:
-
-```sql
-CREATE TABLE tasks (
-  id TEXT PRIMARY KEY,
-  day INTEGER NOT NULL,
-  time TEXT,
-  title TEXT NOT NULL,
-  person TEXT DEFAULT 'BOTH',
-  category TEXT DEFAULT 'HOUSE',
-  priority TEXT DEFAULT 'MEDIUM',
-  is_completed BOOLEAN DEFAULT false,
-  status TEXT DEFAULT 'TODO',
-  sort_order INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE weekly_reviews (
-  id TEXT PRIMARY KEY,
-  week_label TEXT NOT NULL,
-  completion_rate INTEGER DEFAULT 0,
-  sport_sessions INTEGER DEFAULT 0,
-  rating INTEGER DEFAULT 3,
-  good_things TEXT DEFAULT '',
-  improve_things TEXT DEFAULT '',
-  next_plan TEXT DEFAULT '',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
-ALTER PUBLICATION supabase_realtime ADD TABLE weekly_reviews;
-
-CREATE POLICY "Allow all" ON tasks FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON weekly_reviews FOR ALL USING (true) WITH CHECK (true);
-ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE weekly_reviews ENABLE ROW LEVEL SECURITY;
-```
-
-Buoc 3: Lay API Keys
-- Settings -> API -> Project URL + anon public key
-
-Buoc 4: Chinh sua file .env:
-```
-VITE_SUPABASE_URL=https://xxxx.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-```
-
-Buoc 5: Trong Vercel dashboard -> Settings -> Environment Variables
-- Them VITE_SUPABASE_URL va VITE_SUPABASE_ANON_KEY
-- Save -> Vercel tu redeploy
+- **Frontend**: React 19, Vite, Tailwind CSS v4, Lucide React (Icons)
+- **Data Visualization**: Recharts
+- **Backend & Database**: Supabase (PostgreSQL, Realtime Subscriptions, Row Level Security)
+- **Deployment**: Vercel / Netlify (PWA-ready)
 
 ---
 
-## Cau truc project
+## 🚀 Getting Started
 
-```
-SCHEDULE_COUPLE/
-├── public/favicon.svg
-├── src/
-│   ├── components/
-│   │   ├── shared/
-│   │   │   ├── Badge.jsx          # Person/Category/Priority badges
-│   │   │   └── TaskCard.jsx       # Task card + Edit modal
-│   │   ├── tabs/
-│   │   │   ├── Tab1Today.jsx      # Timetable + Today focus
-│   │   │   ├── Tab2WeekPlan.jsx   # Master checklist
-│   │   │   └── Tab3Dashboard.jsx  # KPI + Charts + Journal
-│   │   └── Header.jsx             # Header + Scorecards + Tabs
-│   ├── context/AppContext.jsx      # Global state
-│   ├── data/initialTasks.js       # 43 default tasks
-│   ├── lib/
-│   │   ├── supabase.js            # Supabase client + LS fallback
-│   │   └── utils.js               # Helpers
-│   ├── App.jsx
-│   ├── main.jsx
-│   └── index.css
-├── .env.example
-├── index.html
-└── vite.config.js
+### Prerequisites
+- [Node.js](https://nodejs.org/) (v18 or higher)
+- [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
+
+### Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/schedule-couple.git
+   cd schedule-couple
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Start the development server:**
+   ```bash
+   npm run dev
+   ```
+
+4. **View the app:**
+   Open your browser and navigate to `http://localhost:5173`.
+
+---
+
+## ☁️ Backend Setup (Supabase)
+
+The application works perfectly out of the box using `localStorage` for solo testing. However, to enable **real-time syncing** between multiple devices, you need to connect it to Supabase.
+
+1. Create a free account and project at [Supabase](https://supabase.com/).
+2. Run the database migration script in the Supabase SQL Editor:
+   *(See `schema.sql` or `health_migration.sql` in the repository for the complete table setup and Row Level Security policies).*
+3. Retrieve your API Keys from **Settings > API** (Project URL & `anon` public key).
+4. Create a `.env` file in the root directory (you can copy `.env.example`):
+   ```env
+   VITE_SUPABASE_URL=https://your-project.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-key
+   ```
+
+---
+
+## 📂 Project Architecture
+
+```text
+src/
+├── components/
+│   ├── shared/         # Reusable UI components (TaskCard, Badge, etc.)
+│   ├── tabs/           # Main application views (Today, WeekPlan, Dashboard)
+│   └── Header.jsx      # Navigation & Scorecards
+├── context/
+│   └── AppContext.jsx  # Global State Management
+├── data/
+│   └── initialTasks.js # Bootstrapping data
+├── lib/
+│   ├── supabase.js     # Supabase Client & Real-time setup
+│   └── utils.js        # Helper functions
+├── App.jsx             # Root Component
+├── main.jsx            # Entry Point
+└── index.css           # Global Styles & Tailwind Config
 ```
 
 ---
 
-## Tech Stack
+## 🌐 Deployment (Vercel)
 
-- React 18 + Vite 6
-- Tailwind CSS v4 + Custom CSS animations
-- Lucide React icons
-- Recharts (ComposedChart)
-- Supabase (Postgres + Real-time) / LocalStorage fallback
-- Deploy: Vercel / Netlify (Free tier)
+Deploying to Vercel is highly recommended for optimal performance:
+
+1. Push your code to your GitHub repository.
+2. Log into [Vercel](https://vercel.com) and import your GitHub repository.
+3. In the project settings, add the Environment Variables (`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`).
+4. Click **Deploy**. Your app will be live and auto-updating on future pushes!
 
 ---
 
-Made with love for Thi & Phong
+<div align="center">
+  <i>Developed with ❤️ for Thi & Phong</i>
+</div>

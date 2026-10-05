@@ -10,6 +10,8 @@
     <a href="https://tailwindcss.com/"><img src="https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind CSS" /></a>
     <a href="https://supabase.com/"><img src="https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" /></a>
   </p>
+
+  <h3>🚀 <a href="https://schedule-couple.vercel.app/">Live Application: COUPLE CARE 💕</a> (In Active Daily Use)</h3>
 </div>
 
 ---

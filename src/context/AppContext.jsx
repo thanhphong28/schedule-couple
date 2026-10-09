@@ -17,6 +17,13 @@ async function sbGetTasks(coupleId) {
   if (error) throw error;
   return data;
 }
+async function sbGetTaskLogs(coupleId) {
+  if (!coupleId) return [];
+  const { data, error } = await supabase
+    .from('task_logs').select('*').eq('couple_id', coupleId);
+  if (error) throw error;
+  return data;
+}
 async function sbGetReviews(coupleId) {
   if (!coupleId) return [];
   const { data, error } = await supabase
@@ -64,6 +71,7 @@ export const PRESET_WALLPAPERS = [
 export function AppProvider({ children }) {
   const { user, couple } = useAuth();
   const [tasks, setTasks] = useState([]);
+  const [taskLogs, setTaskLogs] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [activeTab, setActiveTab] = useState(0);
   const [synced, setSynced] = useState(false);
@@ -112,6 +120,7 @@ export function AppProvider({ children }) {
     
     if (lastCoupleId !== currentCoupleId) {
       setTasks([]);
+      setTaskLogs([]);
       setReviews([]);
       localStorage.setItem('sc_last_couple_id', currentCoupleId);
     }
@@ -121,10 +130,12 @@ export function AppProvider({ children }) {
     
     Promise.all([
       sbGetTasks(couple.id).catch(err => { console.warn('Tasks err', err); return null; }), 
+      sbGetTaskLogs(couple.id).catch(err => { console.warn('TaskLogs err', err); return null; }), 
       sbGetReviews(couple.id).catch(err => { console.warn('Reviews err', err); return null; }), 
       sbGetWallpapers(couple.id).catch(() => [])
-    ]).then(([t, r, wps]) => {
+    ]).then(([t, logs, r, wps]) => {
       if (t) setTasks(t);
+      if (logs) setTaskLogs(logs);
       if (r) setReviews(r);
       if (wps) {
         setCustomWallpapers(wps);
@@ -154,6 +165,13 @@ export function AppProvider({ children }) {
           }
         }
         sbGetTasks(couple.id).then(setTasks).catch(console.error);
+      })
+      .subscribe();
+
+    const taskLogsSub = supabase
+      .channel('task-logs-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_logs', filter: `couple_id=eq.${couple.id}` }, () => {
+        sbGetTaskLogs(couple.id).then(setTaskLogs).catch(console.error);
       })
       .subscribe();
 
@@ -189,6 +207,7 @@ export function AppProvider({ children }) {
 
     return () => {
       supabase.removeChannel(taskSub);
+      supabase.removeChannel(taskLogsSub);
       supabase.removeChannel(reviewSub);
       supabase.removeChannel(wpSub);
       supabase.removeChannel(userSub);
@@ -341,9 +360,12 @@ export function AppProvider({ children }) {
   };
 
   const tasksRef = useRef(tasks);
+  const taskLogsRef = useRef(taskLogs);
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+  useEffect(() => { taskLogsRef.current = taskLogs; }, [taskLogs]);
 
   const toggleTaskRef = useRef(null);
+  const toggleTaskInstanceRef = useRef(null);
 
   useEffect(() => {
     const checkTasks = () => {
@@ -353,13 +375,23 @@ export function AppProvider({ children }) {
       const currentHour = now.getHours();
       const currentMin = now.getMinutes();
       const nowTotalMins = currentHour * 60 + currentMin;
-      const todayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+      
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const todayKey = `${yyyy}-${mm}-${dd}`;
 
       tasksRef.current.forEach(t => {
-        if (t.day !== currentDay || t.is_completed || !t.time) return;
+        const log = taskLogsRef.current.find(l => l.task_id === t.id && l.target_date === todayKey);
+        if (log?.is_deleted) return;
+        
+        const isCompleted = log ? log.is_completed : false;
+        const taskTime = log?.new_time || t.time;
+        
+        if (t.day !== currentDay || isCompleted || !taskTime) return;
 
         // Parse start time "HH:mm" from "HH:mm" or "HH:mm - HH:mm"
-        const startTimeStr = t.time.split('-')[0].trim();
+        const startTimeStr = taskTime.split('-')[0].trim();
         const match = startTimeStr.match(/^(\d{1,2}):(\d{2})/);
         if (!match) return;
 
@@ -442,6 +474,85 @@ export function AppProvider({ children }) {
   }
 
   // ── Task operations ────────────────────────────────────────────────────────
+  
+  // task_logs (Instance) operations
+  function getTaskLog(taskId, dateStr) {
+    return taskLogs.find(l => l.task_id === taskId && l.target_date === dateStr);
+  }
+
+  function toggleTaskInstance(taskId, dateStr) {
+    const existing = getTaskLog(taskId, dateStr);
+    const newVal = existing ? !existing.is_completed : true;
+    
+    const log = existing 
+      ? { ...existing, is_completed: newVal, updated_at: new Date().toISOString() }
+      : { 
+          id: nanoid(), 
+          task_id: taskId, 
+          couple_id: couple?.id, 
+          target_date: dateStr, 
+          is_completed: true,
+          is_deleted: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+    setTaskLogs(prev => {
+      const idx = prev.findIndex(l => l.id === log.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = log;
+        return next;
+      }
+      return [...prev, log];
+    });
+    
+    if (isSupabaseReady) {
+      supabase.from('task_logs').upsert(log).then(({error}) => {
+        if (error) console.error("Error upserting task log:", error);
+      });
+    }
+  }
+  toggleTaskInstanceRef.current = toggleTaskInstance;
+
+  function updateTaskInstance(taskId, dateStr, updates) {
+    const existing = getTaskLog(taskId, dateStr);
+    const log = existing 
+      ? { ...existing, ...updates, updated_at: new Date().toISOString() }
+      : { 
+          id: nanoid(), 
+          task_id: taskId, 
+          couple_id: couple?.id, 
+          target_date: dateStr, 
+          is_completed: false,
+          is_deleted: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          ...updates
+        };
+
+    setTaskLogs(prev => {
+      const idx = prev.findIndex(l => l.id === log.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = log;
+        return next;
+      }
+      return [...prev, log];
+    });
+    
+    if (isSupabaseReady) {
+      supabase.from('task_logs').upsert(log).then(({error}) => {
+        if (error) console.error("Error upserting task log:", error);
+      });
+    }
+  }
+
+  function deleteTaskInstance(taskId, dateStr) {
+    updateTaskInstance(taskId, dateStr, { is_deleted: true });
+  }
+
+  // Old template operations
   function toggleTask(id) {
     setTasks(prev => {
       const next = prev.map(t =>
@@ -485,9 +596,34 @@ export function AppProvider({ children }) {
   }
 
   function resetWeek() {
-    const completedCount = tasks.filter(t => t.is_completed).length;
-    const sportCount = tasks.filter(t => t.category === 'SPORT' && t.is_completed).length;
-    const pct = Math.round((completedCount / tasks.length) * 100);
+    // Determine the number of tasks actually assigned for the current week dynamically
+    // based on taskLogs (for true weekly completion logic, this is an approximation)
+    let totalAssigned = 0;
+    let completedCount = 0;
+    let sportCount = 0;
+
+    const now = new Date();
+    const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
+    const diff = now.getDate() - currentDay;
+    const mon = new Date(now.setDate(diff));
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(mon);
+      d.setDate(mon.getDate() + i);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      
+      const dayTasks = tasks.filter(t => t.day === i);
+      dayTasks.forEach(t => {
+        const log = taskLogs.find(l => l.task_id === t.id && l.target_date === dateStr);
+        if (!log?.is_deleted) {
+          totalAssigned++;
+          if (log?.is_completed) completedCount++;
+          if (t.category === 'SPORT' && log?.is_completed) sportCount++;
+        }
+      });
+    }
+
+    const pct = totalAssigned > 0 ? Math.round((completedCount / totalAssigned) * 100) : 0;
     const review = {
       id: nanoid(),
       week_label: getCurrentWeekLabel(),
@@ -501,9 +637,8 @@ export function AppProvider({ children }) {
       created_at: new Date().toISOString(),
     };
     addReview(review);
-    const reset = tasks.map(t => ({ ...t, is_completed: false, status: 'TODO' }));
-    setTasks(reset);
-    reset.forEach(t => sbUpsertTask(t));
+    // No need to reset tasks.is_completed anymore as we use task_logs!
+    showToast('Đã lưu đánh giá tuần!', 'success');
   }
 
   function getCurrentWeekLabel() {
@@ -536,19 +671,45 @@ export function AppProvider({ children }) {
   }
 
   // ── Computed stats ─────────────────────────────────────────────────────────
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter(t => t.is_completed).length;
-  const bothTasks = tasks.filter(t => t.person === 'BOTH').length;
-  const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const { totalTasks, completedTasks, bothTasks, progressPct } = useMemo(() => {
+    let total = 0;
+    let completed = 0;
+    let both = 0;
+
+    const now = new Date();
+    const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
+    const diff = now.getDate() - currentDay;
+    const mon = new Date(now.setDate(diff));
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(mon);
+      d.setDate(mon.getDate() + i);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      
+      const dayTasks = tasks.filter(t => t.day === i);
+      dayTasks.forEach(t => {
+        const log = taskLogs.find(l => l.task_id === t.id && l.target_date === dateStr);
+        if (!log?.is_deleted) {
+          total++;
+          if (log?.is_completed) completed++;
+          if (t.person === 'BOTH') both++;
+        }
+      });
+    }
+
+    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { totalTasks: total, completedTasks: completed, bothTasks: both, progressPct: pct };
+  }, [tasks, taskLogs]);
 
   // Combined Wallpapers (Custom uploaded + Presets)
   const allWallpapers = [...customWallpapers, ...PRESET_WALLPAPERS];
 
   const value = {
-    tasks, reviews, activeTab, setActiveTab,
+    tasks, taskLogs, reviews, activeTab, setActiveTab,
     isOnline: isSupabaseReady,
     totalTasks, completedTasks, bothTasks, progressPct,
     toggleTask, updateTask, addTask, deleteTask, resetWeek,
+    toggleTaskInstance, updateTaskInstance, deleteTaskInstance,
     addReview, updateReview, deleteReview,
     wallpaper, setWallpaper,
     themeId, setThemeId,

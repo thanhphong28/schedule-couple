@@ -5,14 +5,18 @@ import { CATEGORIES, DAYS, DAYS_SHORT_EN, PERSONS, PRIORITY } from '../../data/i
 import { useApp } from '../../context/AppContext.jsx';
 import { CategoryBadge, PersonBadge, PriorityBadge } from './Badge.jsx';
 
-export function TaskCard({ task, showDay = false, onEdit }) {
-  const { toggleTask } = useApp();
+export function TaskCard({ task, dateStr, showDay = false, onEdit }) {
+  const { toggleTask, toggleTaskInstance } = useApp();
   const [ripple, setRipple] = useState(false);
 
   const handleToggle = (e) => {
     e.stopPropagation();
     setRipple(true);
-    toggleTask(task.id);
+    if (dateStr) {
+      toggleTaskInstance(task.id, dateStr);
+    } else {
+      toggleTask(task.id);
+    }
     setTimeout(() => setRipple(false), 300);
   };
 
@@ -96,9 +100,8 @@ export function TaskCard({ task, showDay = false, onEdit }) {
   );
 }
 
-// Mobile Bottom Sheet for Edit/Add Task
-export function TaskModal({ task, onClose, onSave }) {
-  const { tasks, addTask, updateTask, deleteTask } = useApp();
+export function TaskModal({ task, dateStr, onClose, onSave }) {
+  const { tasks, addTask, updateTask, deleteTask, updateTaskInstance, deleteTaskInstance } = useApp();
   const isEdit = !!task?.id;
 
   // Find linked tasks (same title, time, category) if editing
@@ -114,6 +117,7 @@ export function TaskModal({ task, onClose, onSave }) {
   });
 
   const [selectedDays, setSelectedDays] = useState(initialDays);
+  const [editScope, setEditScope] = useState('instance'); // 'instance' or 'template'
 
   const toggleDay = (d) => {
     if (selectedDays.includes(d)) {
@@ -136,22 +140,26 @@ export function TaskModal({ task, onClose, onSave }) {
     delete baseForm.status;
 
     if (isEdit) {
-      // Sync across all selected days
-      sortedDays.forEach(d => {
-        const existing = linkedTasks.find(t => t.day === d);
-        if (existing) {
-          updateTask(existing.id, { ...baseForm });
-        } else {
-          addTask({ ...baseForm, day: d });
-        }
-      });
-      
-      // Delete tasks for days that were unselected
-      linkedTasks.forEach(t => {
-        if (!sortedDays.includes(t.day)) {
-          deleteTask(t.id);
-        }
-      });
+      if (editScope === 'instance' && dateStr) {
+        updateTaskInstance(task.id, dateStr, { new_title: baseForm.title, new_time: baseForm.time });
+      } else {
+        // Sync across all selected days
+        sortedDays.forEach(d => {
+          const existing = linkedTasks.find(t => t.day === d);
+          if (existing) {
+            updateTask(existing.id, { ...baseForm });
+          } else {
+            addTask({ ...baseForm, day: d });
+          }
+        });
+        
+        // Delete tasks for days that were unselected
+        linkedTasks.forEach(t => {
+          if (!sortedDays.includes(t.day)) {
+            deleteTask(t.id);
+          }
+        });
+      }
     } else {
       sortedDays.forEach(d => addTask({ ...baseForm, day: d }));
     }
@@ -187,6 +195,29 @@ export function TaskModal({ task, onClose, onSave }) {
 
         {/* Scrollable Form Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4 max-h-[65dvh]">
+          {/* Edit Scope Toggle */}
+          {isEdit && dateStr && (
+            <div className="bg-zinc-800/50 p-2.5 rounded-xl border border-white/5 flex flex-col gap-2 mb-2">
+              <label className="text-xs font-bold text-rose-300">Phạm vi áp dụng thay đổi:</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditScope('instance')}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all border ${editScope === 'instance' ? 'bg-rose-500/20 border-rose-500/50 text-rose-200' : 'bg-transparent border-white/10 text-zinc-400 hover:text-white'}`}
+                >
+                  Chỉ hôm nay ({dateStr.split('-').reverse().slice(0,2).join('/')})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditScope('template')}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all border ${editScope === 'template' ? 'bg-rose-500/20 border-rose-500/50 text-rose-200' : 'bg-transparent border-white/10 text-zinc-400 hover:text-white'}`}
+                >
+                  Tất cả các tuần
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Title */}
           <div>
             <label className="text-xs font-bold text-zinc-300 mb-1.5 block">
@@ -202,31 +233,33 @@ export function TaskModal({ task, onClose, onSave }) {
           </div>
 
           {/* Days Selection */}
-          <div>
-            <label className="text-xs font-bold text-zinc-300 mb-2 flex items-center justify-between">
-              <span>Ngày áp dụng</span>
-              <span className="text-[11px] text-zinc-400 font-normal">Đã chọn {selectedDays.length} ngày</span>
-            </label>
-            <div className="grid grid-cols-7 gap-1.5">
-              {DAYS_SHORT_EN.map((d, i) => {
-                const isSelected = selectedDays.includes(i);
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => toggleDay(i)}
-                    className={`py-2 rounded-xl text-xs font-bold transition-all border text-center active:scale-95 ${
-                      isSelected 
-                        ? 'bg-rose-500 text-white border-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.4)]' 
-                        : 'bg-zinc-800/80 text-zinc-400 border-white/10 hover:text-white hover:bg-zinc-700/80'
-                    }`}
-                  >
-                    {d}
-                  </button>
-                );
-              })}
+          {(!isEdit || editScope === 'template') && (
+            <div>
+              <label className="text-xs font-bold text-zinc-300 mb-2 flex items-center justify-between">
+                <span>Ngày áp dụng</span>
+                <span className="text-[11px] text-zinc-400 font-normal">Đã chọn {selectedDays.length} ngày</span>
+              </label>
+              <div className="grid grid-cols-7 gap-1.5">
+                {DAYS_SHORT_EN.map((d, i) => {
+                  const isSelected = selectedDays.includes(i);
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => toggleDay(i)}
+                      className={`py-2 rounded-xl text-xs font-bold transition-all border text-center active:scale-95 ${
+                        isSelected 
+                          ? 'bg-rose-500 text-white border-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.4)]' 
+                          : 'bg-zinc-800/80 text-zinc-400 border-white/10 hover:text-white hover:bg-zinc-700/80'
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Time Picker */}
           <div className="grid grid-cols-2 gap-3">
@@ -343,10 +376,14 @@ export function TaskModal({ task, onClose, onSave }) {
               type="button"
               className="p-3 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30 rounded-xl transition-colors active:scale-95 flex items-center justify-center flex-shrink-0" 
               onClick={() => {
-                if (linkedTasks && linkedTasks.length > 0) {
-                  linkedTasks.forEach(t => deleteTask(t.id));
+                if (editScope === 'instance' && dateStr) {
+                  deleteTaskInstance(task.id, dateStr);
                 } else {
-                  deleteTask(task.id);
+                  if (linkedTasks && linkedTasks.length > 0) {
+                    linkedTasks.forEach(t => deleteTask(t.id));
+                  } else {
+                    deleteTask(task.id);
+                  }
                 }
                 onClose();
               }}

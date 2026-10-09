@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { CATEGORIES, DAYS, DAYS_SHORT_EN, PERSONS } from '../../data/initialTasks.js';
-import { getDayIndex } from '../../lib/utils.js';
+import { getDayIndex, getWeekDates } from '../../lib/utils.js';
 import { TaskCard, TaskModal } from '../shared/TaskCard.jsx';
 
 // Timeline configs
@@ -46,7 +46,7 @@ function getLastName(fullName) {
 }
 
 export default function Tab1Today() {
-  const { tasks, synced } = useApp();
+  const { tasks, taskLogs, synced } = useApp();
   const { user, partner } = useAuth();
   
   // Resolve female and male names
@@ -75,12 +75,26 @@ export default function Tab1Today() {
     return () => clearInterval(timer);
   }, []);
 
-  // Filter tasks for the selected day
+  const weekDates = useMemo(() => getWeekDates(), []);
+  const currentDateStr = weekDates[selectedDay];
+
+  // Filter tasks for the selected day and merge with taskLogs
   const dayTasks = useMemo(() => {
     return tasks
       .filter(t => t.day === selectedDay)
+      .map(t => {
+        const log = taskLogs.find(l => l.task_id === t.id && l.target_date === currentDateStr);
+        if (log?.is_deleted) return null;
+        return {
+          ...t,
+          is_completed: log ? log.is_completed : false,
+          title: log?.new_title || t.title,
+          time: log?.new_time || t.time
+        };
+      })
+      .filter(Boolean)
       .sort((a, b) => timeToNum(a.time) - timeToNum(b.time));
-  }, [tasks, selectedDay]);
+  }, [tasks, taskLogs, selectedDay, currentDateStr]);
 
   // Apply person filter
   const filteredDayTasks = useMemo(() => {
@@ -532,6 +546,7 @@ export default function Tab1Today() {
                 <TaskCard
                   key={task.id}
                   task={task}
+                  dateStr={currentDateStr}
                   onEdit={(t) => { setEditTask(t); setShowModal(true); }}
                 />
               ))}
@@ -544,6 +559,7 @@ export default function Tab1Today() {
       {showModal && (
         <TaskModal
           task={editTask ? editTask : { day: selectedDay }}
+          dateStr={currentDateStr}
           onClose={() => { setShowModal(false); setEditTask(null); }}
         />
       )}

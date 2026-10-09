@@ -53,7 +53,7 @@ Built with performance, maintainability, and user experience in mind, it utilize
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/schedule-couple.git
+   git clone https://github.com/thanhphong28/schedule-couple.git
    cd schedule-couple
    ```
 

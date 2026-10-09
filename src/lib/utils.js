@@ -16,6 +16,28 @@ export function getDayIndex() {
   return d === 0 ? 6 : d - 1;
 }
 
+export function getYYYYMMDD(date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export function getWeekDates(baseDate = new Date()) {
+  const current = new Date(baseDate);
+  const day = current.getDay(); // 0 is Sunday
+  const diff = current.getDate() - day + (day === 0 ? -6 : 1); 
+  const mon = new Date(current.setDate(diff));
+  
+  const weekDates = [];
+  for (let i = 0; i < 7; i++) {
+    const nextDate = new Date(mon);
+    nextDate.setDate(mon.getDate() + i);
+    weekDates.push(getYYYYMMDD(nextDate));
+  }
+  return weekDates;
+}
+
 export function formatDate(date = new Date()) {
   return date.toLocaleDateString('vi-VN', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'

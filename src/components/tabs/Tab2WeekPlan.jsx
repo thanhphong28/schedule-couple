@@ -171,7 +171,7 @@ export default function Tab2WeekPlan() {
       <div className="flex items-center justify-between gap-2 px-1">
         <div>
           <h2 className="text-base font-extrabold text-white">📋 Kế hoạch cả tuần</h2>
-          <p className="text-xs text-zinc-400">{tasks.length} công việc tuần này</p>
+          <p className="text-xs text-zinc-400">{totalTasks} công việc tuần này</p>
         </div>
         <div className="flex items-center gap-2">
           <button

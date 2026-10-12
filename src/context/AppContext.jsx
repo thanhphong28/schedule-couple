@@ -1,5 +1,5 @@
 // context/AppContext.jsx
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getInitialTasks } from '../data/initialTasks.js';
 import { isSupabaseReady, supabase } from '../lib/supabase.js';
 import { nanoid, playNotificationChime, lsGet, lsSet } from '../lib/utils.js';

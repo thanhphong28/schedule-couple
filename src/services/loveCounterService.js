@@ -317,20 +317,13 @@ export function generateAllDDays({ user, partner, userDob, partnerDob, startDate
 
 /**
  * Định dạng chuỗi thông báo ghim cố định trên điện thoại theo yêu cầu của user
- * Ví dụ: "Thanh Phong 💕 350 Ngày 💕 Nhật Thi" hoặc "Thanh Phong 350 Nhật Thi"
+/**
+ * Định dạng tiêu đề thông báo ghim trên thanh trạng thái điện thoại chuẩn như ứng dụng đếm ngày yêu:
+ * Ví dụ: "Nhật Thi ❤️ 422 Thanh Phong"
  */
 export function formatStickyNotificationText({ user, partner, totalDays, format = 'standard', customFormat = '' }) {
-  const name1 = user?.display_name || 'Anh';
-  const name2 = partner?.display_name || 'Em';
-
-  if (format === 'compact') {
-    // Kiểu gọn đúng như user ví dụ: "Thanh Phong 350 Nhật Thi"
-    return `${name1} ${totalDays} ${name2}`;
-  }
-
-  if (format === 'romantic') {
-    return `💕 ${totalDays} Ngày Yêu · ${name1} & ${name2}`;
-  }
+  const name1 = partner?.display_name || partner?.full_name || 'BABI';
+  const name2 = user?.display_name || user?.full_name || 'Tôi';
 
   if (format === 'custom' && customFormat.trim()) {
     return customFormat
@@ -339,8 +332,8 @@ export function formatStickyNotificationText({ user, partner, totalDays, format 
       .replace(/{name2}/g, name2);
   }
 
-  // 'standard' (Mặc định siêu đẹp)
-  return `${name1} 💕 ${totalDays} Ngày 💕 ${name2}`;
+  // Chuẩn 100% như thanh thông báo đếm ngày yêu trên điện thoại (Hình 2)
+  return `${name1} ❤️ ${totalDays} ${name2}`;
 }
 
 /**

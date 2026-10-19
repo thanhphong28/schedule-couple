@@ -6,8 +6,8 @@ import { supabase } from '../../lib/supabase.js';
 import { showToast } from '../shared/Toast.jsx';
 import { 
   Heart, Calendar, Bell, Sparkles, Plus, Clock, Gift, 
-  ChevronRight, CheckCircle2, Edit3, Trash2, CalendarDays,
-  Smartphone, Share2, Star, PartyPopper
+  ChevronRight, ChevronDown, CheckCircle2, Edit3, Trash2, CalendarDays,
+  Smartphone, PartyPopper
 } from 'lucide-react';
 import {
   calculateLoveDays,
@@ -39,10 +39,14 @@ export default function LoveCounterCard({ user, partner, couple, refreshAuth }) 
   const [newIcon, setNewIcon] = useState('💖');
   const [newNotes, setNewNotes] = useState('');
 
-  // Sticky Notification Settings State
-  const [stickyEnabled, setStickyEnabled] = useState(false);
-  const [stickyFormat, setStickyFormat] = useState('standard');
-  const [customFormatText, setCustomFormatText] = useState('');
+  // Sticky Notification Settings State (Chuẩn Hình 2)
+  const [stickyEnabled, setStickyEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('sc_sticky_love_enabled') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   // Tự động đồng bộ ngày sinh nhật từ 2 tài khoản (User & Partner)
   const [userDob, setUserDob] = useState(user?.dob || null);
@@ -240,54 +244,68 @@ export default function LoveCounterCard({ user, partner, couple, refreshAuth }) 
     }
   };
 
-  // Xử lý bật/tắt thông báo ghim cố định trên điện thoại
+  // Xử lý bật/tắt thông báo ghim cố định trên điện thoại chuẩn Hình 2
   const handleToggleStickyNotif = async (targetEnabled) => {
     setStickyEnabled(targetEnabled);
+    try {
+      localStorage.setItem('sc_sticky_love_enabled', targetEnabled ? 'true' : 'false');
+    } catch {}
 
     if (targetEnabled) {
       const result = await updateStickyLoveNotification({
         user,
         partner,
-        totalDays: loveStats.totalDays,
-        format: stickyFormat,
-        customFormat: customFormatText
+        totalDays: loveStats.totalDays
       });
 
       if (!result.success) {
         showToast(result.reason || 'Không thể bật thông báo ghim 🥺', 'error');
         setStickyEnabled(false);
+        try { localStorage.setItem('sc_sticky_love_enabled', 'false'); } catch {}
         return;
       }
 
-      showToast(`Đã ghim lên điện thoại: "${result.title}" 📌💕`, 'success');
+      showToast(`Đã ghim lên thanh thông báo: "${result.title}" 📌❤️`, 'success');
     } else {
       await dismissStickyLoveNotification();
-      showToast('Đã gỡ thông báo ghim', 'info');
-    }
-
-    // Lưu vào database nếu có couple
-    if (couple?.id) {
-      try {
-        await supabase.from('couples').update({
-          sticky_notification_enabled: targetEnabled,
-          sticky_notification_format: stickyFormat
-        }).eq('id', couple.id);
-      } catch (err) {
-        console.warn('Lỗi lưu cài đặt thông báo:', err);
-      }
+      showToast('Đã gỡ ghim thông báo', 'info');
     }
   };
 
-  // Cập nhật preview thông báo khi đổi định dạng
+  // Tự động duy trì thông báo ghim khi người dùng mở lại app
+  useEffect(() => {
+    if (stickyEnabled && loveStats?.totalDays && user) {
+      updateStickyLoveNotification({
+        user,
+        partner,
+        totalDays: loveStats.totalDays
+      }).catch(() => {});
+    }
+  }, [stickyEnabled, loveStats?.totalDays, user?.id, partner?.id]);
+
+  useEffect(() => {
+    if (!stickyEnabled) return;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && loveStats?.totalDays && user) {
+        updateStickyLoveNotification({
+          user,
+          partner,
+          totalDays: loveStats.totalDays
+        }).catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [stickyEnabled, loveStats?.totalDays, user, partner]);
+
+  // Cập nhật preview thông báo chuẩn Hình 2
   const currentStickyPreview = useMemo(() => {
     return formatStickyNotificationText({
       user,
       partner,
-      totalDays: loveStats.totalDays,
-      format: stickyFormat,
-      customFormat: customFormatText
+      totalDays: loveStats.totalDays
     });
-  }, [user, partner, loveStats.totalDays, stickyFormat, customFormatText]);
+  }, [user, partner, loveStats.totalDays]);
 
   // Calendar month view computation
   const calendarDays = useMemo(() => {
@@ -760,22 +778,23 @@ export default function LoveCounterCard({ user, partner, couple, refreshAuth }) 
         </div>
       )}
 
-      {/* ─── TAB CONTENT 4: STICKY NOTIFICATION SETTINGS ────────────── */}
+      {/* ─── TAB CONTENT 4: STICKY NOTIFICATION (CHUẨN HÌNH 2) ────────────── */}
       {activeTab === 'sticky' && (
         <div className="p-4 rounded-2xl bg-zinc-900/60 border border-white/10 space-y-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h4 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5">
                 <Smartphone size={15} className="text-rose-400" />
-                <span>Ghim thông báo thanh trạng thái điện thoại</span>
+                <span>Ghim Thông Báo Ngày Yêu (Thanh Trạng Thái)</span>
               </h4>
               <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">
-                Thông báo sẽ luôn ghim cố định trên màn hình khóa & thanh trạng thái điện thoại để nhắc nhớ bao nhiêu ngày bên nhau.
+                Ghim cố định số ngày yêu ở khay thông báo trên điện thoại giống như ứng dụng đếm ngày yêu.
               </p>
             </div>
 
             {/* Toggle switch */}
             <button
+              type="button"
               onClick={() => handleToggleStickyNotif(!stickyEnabled)}
               className={`w-12 h-6 rounded-full transition-colors relative p-0.5 shrink-0 ${
                 stickyEnabled ? 'bg-rose-500' : 'bg-zinc-700'
@@ -789,101 +808,86 @@ export default function LoveCounterCard({ user, partner, couple, refreshAuth }) 
             </button>
           </div>
 
-          {/* Live Preview of Notification */}
-          <div className="p-3.5 rounded-2xl bg-black/60 border border-rose-500/30">
-            <div className="text-[10px] font-bold uppercase text-zinc-400 mb-1.5 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-rose-400" />
-              <span>Xem trước trên điện thoại (Lockscreen / Status Bar):</span>
-            </div>
-            <div className="text-sm font-black text-rose-300">
-              {currentStickyPreview}
-            </div>
-            <div className="text-[11px] text-zinc-400 mt-0.5">
-              Hôm nay là ngày thứ {loveStats.totalDays} hai bạn bên nhau! Chúc tình yêu luôn ngọt ngào 💖
-            </div>
-          </div>
-
-          {/* Format Selection */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-bold text-zinc-300">Chọn định dạng nhắc nhớ:</label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {[
-                { 
-                  id: 'standard', 
-                  title: 'Tiêu chuẩn (Có trái tim)', 
-                  desc: `${user?.display_name || 'Anh'} 💕 ${loveStats.totalDays} Ngày 💕 ${partner?.display_name || 'Em'}` 
-                },
-                { 
-                  id: 'compact', 
-                  title: 'Ngắn gọn (Theo yêu cầu)', 
-                  desc: `${user?.display_name || 'Anh'} ${loveStats.totalDays} ${partner?.display_name || 'Em'}` 
-                },
-                { 
-                  id: 'romantic', 
-                  title: 'Lãng mạn', 
-                  desc: `💕 ${loveStats.totalDays} Ngày Yêu · ${user?.display_name || 'Anh'} & ${partner?.display_name || 'Em'}` 
-                },
-                { 
-                  id: 'custom', 
-                  title: 'Tùy chỉnh tự viết', 
-                  desc: 'Dùng {name1}, {days}, {name2}' 
-                },
-              ].map(opt => {
-                const isSelected = stickyFormat === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    onClick={() => {
-                      setStickyFormat(opt.id);
-                      if (stickyEnabled) {
-                        // Cập nhật lại thông báo ngay với format mới
-                        setTimeout(() => {
-                          updateStickyLoveNotification({
-                            user,
-                            partner,
-                            totalDays: loveStats.totalDays,
-                            format: opt.id,
-                            customFormat: customFormatText
-                          });
-                        }, 50);
-                      }
-                    }}
-                    className={`p-2.5 rounded-xl border text-left transition-all ${
-                      isSelected
-                        ? 'border-rose-400/80 bg-rose-500/15'
-                        : 'border-white/5 bg-white/5 hover:bg-white/10'
-                    }`}
-                  >
-                    <div className="text-xs font-extrabold text-white">{opt.title}</div>
-                    <div className="text-[10px] text-rose-300 truncate mt-0.5 font-medium">{opt.desc}</div>
-                  </button>
-                );
-              })}
+          {/* Mô phỏng chính xác thanh thông báo của điện thoại (Chuẩn Hình 2) */}
+          <div className="p-3.5 rounded-2xl bg-zinc-950/80 border border-zinc-800 shadow-xl space-y-2">
+            <div className="flex items-center justify-between text-[10px] text-zinc-400 font-bold uppercase tracking-wider px-0.5">
+              <span className="flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${stickyEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'}`} />
+                <span>Xem trước thanh thông báo điện thoại</span>
+              </span>
+              <span className="text-[9px] text-zinc-500 lowercase">thông báo trực tiếp</span>
             </div>
 
-            {stickyFormat === 'custom' && (
-              <div className="mt-2">
-                <input
-                  type="text"
-                  value={customFormatText}
-                  onChange={(e) => setCustomFormatText(e.target.value)}
-                  placeholder="{name1} thương {name2} {days} ngày rồi"
-                  className="w-full px-3 py-2 bg-zinc-800 rounded-xl border border-white/10 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-400"
-                />
-                <span className="text-[9px] text-zinc-500 mt-1 block">
-                  Các biến hỗ trợ: {'{name1}'} (Tên bạn), {'{name2}'} (Tên người yêu), {'{days}'} (Số ngày yêu).
-                </span>
+            {/* Notification Row (Design chuẩn Hình 2) */}
+            <div className="p-3 rounded-2xl bg-zinc-900/90 border border-white/5 flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {/* Heart icon circle bên trái */}
+                <div className="w-9 h-9 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center text-rose-400 shrink-0 shadow-inner">
+                  <Heart size={16} className="fill-rose-500 text-rose-500" />
+                </div>
+
+                {/* Nội dung chính: Tên 1 · Avatar · Trái tim Ngày · Avatar · Tên 2 */}
+                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                  <span className="text-xs font-bold text-white truncate max-w-[85px] sm:max-w-[120px]">
+                    {partner?.display_name || partner?.full_name || 'BABI'}
+                  </span>
+
+                  {/* Avatar partner */}
+                  <div className="w-5 h-5 rounded-full bg-zinc-700 border border-white/20 overflow-hidden shrink-0 flex items-center justify-center text-[10px]">
+                    {partner?.avatar_url ? (
+                      <img src={partner.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      '👧'
+                    )}
+                  </div>
+
+                  {/* Trái tim & Số ngày yêu */}
+                  <span className="flex items-center gap-1 text-xs font-black text-rose-400 shrink-0 px-1.5 bg-rose-500/15 py-0.5 rounded-md border border-rose-500/20">
+                    <span>❤️</span>
+                    <span>{loveStats.totalDays}</span>
+                  </span>
+
+                  {/* Avatar user */}
+                  <div className="w-5 h-5 rounded-full bg-zinc-700 border border-white/20 overflow-hidden shrink-0 flex items-center justify-center text-[10px]">
+                    {user?.avatar_url ? (
+                      <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      '👦'
+                    )}
+                  </div>
+
+                  <span className="text-xs font-bold text-white truncate max-w-[85px] sm:max-w-[120px]">
+                    {user?.display_name || user?.full_name || 'Tôi'}
+                  </span>
+                </div>
               </div>
-            )}
+
+              {/* Chevron xuống như trên thông báo Android */}
+              <div className="text-zinc-500 shrink-0">
+                <ChevronDown size={14} />
+              </div>
+            </div>
+
+            <div className="text-[10px] text-zinc-400 px-1 flex items-center justify-between">
+              <span>Đang ghim: <strong className="text-rose-300 font-mono">{currentStickyPreview}</strong></span>
+              <span className={`font-semibold ${stickyEnabled ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                {stickyEnabled ? 'Đang ghim trên máy' : 'Chưa ghim'}
+              </span>
+            </div>
           </div>
 
-          {/* Test Button */}
+          {/* Nút thao tác nhanh đơn giản duy nhất */}
           <button
-            onClick={() => handleToggleStickyNotif(true)}
-            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 text-white text-xs font-black shadow-md hover:brightness-110 transition-all active:scale-95 flex items-center justify-center gap-2"
+            type="button"
+            onClick={() => handleToggleStickyNotif(!stickyEnabled)}
+            className={`w-full py-2.5 rounded-xl text-xs font-black shadow-md transition-all flex items-center justify-center gap-2 active:scale-98 ${
+              stickyEnabled
+                ? 'bg-zinc-800 hover:bg-zinc-700 text-rose-300 border border-rose-500/30'
+                : 'bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white shadow-rose-500/20'
+            }`}
           >
             <Bell size={14} />
-            <span>Thử gửi & Ghim thông báo ngay</span>
+            <span>{stickyEnabled ? 'Cập nhật lại thông báo ghim' : 'Bật & Ghim thông báo ngay'}</span>
           </button>
         </div>
       )}

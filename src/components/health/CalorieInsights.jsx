@@ -65,14 +65,14 @@ export default function CalorieInsights({ profile, userGender, activityData }) {
             </div>
           </div>
 
-          {/* Calo vận động từ thiết bị (nếu có) */}
+          {/* Calo vận động thể chất (nếu có) */}
           {activeCaloriesFromDevice !== null && (
             <div className="p-3 bg-zinc-900/50 rounded-2xl border border-emerald-500/20 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Activity size={16} className="text-emerald-400" />
                 <div>
-                  <span className="text-xs font-bold text-white block">Calo vận động từ thiết bị</span>
-                  <span className="text-[10px] text-zinc-400">Ghi nhận từ {activityData?.source || 'Smartwatch'}</span>
+                  <span className="text-xs font-bold text-white block">Calo vận động thể chất</span>
+                  <span className="text-[10px] text-zinc-400">Ghi nhận: {activityData?.source || 'Nhật ký vận động'}</span>
                 </div>
               </div>
               <div className="text-right">

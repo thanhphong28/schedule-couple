@@ -507,7 +507,7 @@ export function useHealth() {
       calories_burned: parseInt(caloriesBurned, 10) || 0,
       heart_rate_avg: heartRateAvg ? parseInt(heartRateAvg, 10) : null,
       sleep_minutes: sleepMinutes ? parseInt(sleepMinutes, 10) : null,
-      source: source || 'smartwatch',
+      source: source || 'manual',
       synced_at: new Date().toISOString()
     };
 

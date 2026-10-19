@@ -12,7 +12,6 @@ import WeightGoalCard from '../health/WeightGoalCard.jsx';
 import BodySilhouetteCard from '../health/BodySilhouetteCard.jsx';
 import CalorieInsights from '../health/CalorieInsights.jsx';
 import HealthCharts from '../health/HealthCharts.jsx';
-import ConnectedDevices from '../health/ConnectedDevices.jsx';
 import CoupleHealthSharing from '../health/CoupleHealthSharing.jsx';
 import HealthProfileWizard from '../health/HealthProfileWizard.jsx';
 import RomanticDatePickerField from '../shared/RomanticDatePickerField.jsx';
@@ -415,15 +414,6 @@ export default function Tab5Health() {
           {/* B. Chăm Sóc & Động Viên Cặp Đôi (Cheers) */}
           <CoupleHealthSharing
             partner={partner}
-            onSendCheer={healthActions.sendCheer}
-          />
-
-          {/* C. Đồng Hồ Thông Minh (Ở dưới cùng) */}
-          <ConnectedDevices
-            myActivity={myActivity}
-            partnerActivity={partnerActivity}
-            partner={partner}
-            onSyncActivity={healthActions.logActivity}
             onSendCheer={healthActions.sendCheer}
           />
         </div>

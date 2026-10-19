@@ -157,9 +157,9 @@ export function AppProvider({ children }) {
       .channel('tasks-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `couple_id=eq.${couple.id}` }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          // Check if this task is genuinely new (not created locally by us just now)
-          const isNewForMe = !tasks.some(t => t.id === payload.new.id);
-          if (isNewForMe) {
+          // Chỉ thông báo cho đối phương, không thông báo cho chính người vừa tạo task
+          const isCreatedByPartner = payload.new?.created_by && payload.new.created_by !== user?.id;
+          if (isCreatedByPartner) {
             playNotificationChime();
             showToast('Nửa kia vừa thêm một công việc mới kìa! 📝', 'success');
           }

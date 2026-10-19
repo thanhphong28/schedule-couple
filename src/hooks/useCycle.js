@@ -46,13 +46,15 @@ export function useCycle() {
     const fetchData = async () => {
       try {
         // 1. Profile
-        let { data: hp } = await supabase.from('health_profiles').select('*').eq('user_id', femaleId).single();
+        let { data: hp } = await supabase.from('health_profiles').select('*').eq('user_id', femaleId).maybeSingle();
         if (!hp && isFemale) {
-          const { data: newHp } = await supabase.from('health_profiles').insert([{ user_id: femaleId }]).select().single();
-          hp = newHp;
+          try {
+            const { data: newHp } = await supabase.from('health_profiles').insert([{ user_id: femaleId }]).select().maybeSingle();
+            hp = newHp;
+          } catch (e) {}
         }
-        setProfile(hp);
-        setAnalyzedProfile(prev => prev === null ? hp : prev);
+        setProfile(hp || { average_cycle_length: 28, average_period_length: 5 });
+        setAnalyzedProfile(prev => prev === null ? (hp || { average_cycle_length: 28, average_period_length: 5 }) : prev);
 
         // 2. Cycles (get all to ensure accurate cycle tracking, limit to 24)
         const { data: cyc } = await supabase.from('menstrual_cycles')
@@ -105,8 +107,8 @@ export function useCycle() {
           });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'health_profiles', filter: `user_id=eq.${femaleId}` }, () => {
-        supabase.from('health_profiles').select('*').eq('user_id', femaleId).single()
-          .then(({ data }) => setProfile(data));
+        supabase.from('health_profiles').select('*').eq('user_id', femaleId).maybeSingle()
+          .then(({ data }) => { if (data) setProfile(data); });
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'symptoms_log', filter: `user_id=eq.${femaleId}` }, () => {
         const thirtyDaysAgo = new Date();

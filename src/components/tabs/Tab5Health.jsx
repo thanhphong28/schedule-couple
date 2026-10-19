@@ -1,6 +1,38 @@
-import { useState, useMemo } from 'react';
+// components/tabs/Tab5Health.jsx
+// Trung tâm Sức Khỏe & Chăm Sóc Đôi (Couple Health & Wellness Ecosystem)
+import { useState } from 'react';
+import { useAuth } from '../../context/AuthContext.jsx';
 import { useCycle } from '../../hooks/useCycle.js';
-import { HeartPulse, CalendarClock, Droplets, Smile, Frown, Coffee, Info, EyeOff, ShieldCheck, ChevronLeft, ChevronRight, Settings, BarChart2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useHealth } from '../../hooks/useHealth.js';
+
+// Sub-components
+import HydrationCouple from '../health/HydrationCouple.jsx';
+import CycleHealthCard from '../health/CycleHealthCard.jsx';
+import WeightGoalCard from '../health/WeightGoalCard.jsx';
+import CalorieInsights from '../health/CalorieInsights.jsx';
+import HealthCharts from '../health/HealthCharts.jsx';
+import ConnectedDevices from '../health/ConnectedDevices.jsx';
+import CoupleHealthSharing from '../health/CoupleHealthSharing.jsx';
+import HealthProfileWizard from '../health/HealthProfileWizard.jsx';
+
+import {
+  HeartPulse,
+  Droplets,
+  CalendarClock,
+  BarChart2,
+  Smile,
+  Frown,
+  Coffee,
+  Info,
+  ChevronLeft,
+  ChevronRight,
+  Settings,
+  AlertTriangle,
+  CheckCircle,
+  Activity,
+  Sparkles,
+  Sliders
+} from 'lucide-react';
 
 // ==========================================
 // COMPONENT: ONBOARDING CHO BẠN NỮ
@@ -10,7 +42,7 @@ function Onboarding({ onComplete }) {
   const [periodLength, setPeriodLength] = useState(5);
 
   return (
-    <div className="glass-panel p-6 rounded-[32px] animate-fade-in mt-10 shadow-[0_8px_30px_rgba(244,63,94,0.1)]">
+    <div className="glass-panel p-6 rounded-[32px] animate-fade-in mt-4 shadow-[0_8px_30px_rgba(244,63,94,0.1)]">
       <div className="flex justify-center mb-4">
         <div className="w-16 h-16 bg-gradient-to-br from-rose-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg shadow-rose-500/30">
           <HeartPulse size={32} className="text-white" />
@@ -28,7 +60,7 @@ function Onboarding({ onComplete }) {
             type="date" 
             value={lastPeriod}
             onChange={(e) => setLastPeriod(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-rose-500 transition-colors"
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-rose-500 transition-colors font-bold"
           />
         </div>
         <div>
@@ -37,7 +69,7 @@ function Onboarding({ onComplete }) {
             type="number" 
             value={periodLength}
             onChange={(e) => setPeriodLength(Number(e.target.value))}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-rose-500 transition-colors"
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-rose-500 transition-colors font-bold"
           />
         </div>
       </div>
@@ -60,12 +92,10 @@ function HealthCalendar({ cycles, getInsightForDate, getCalendarStatus, selected
   
   const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-  // Điều chỉnh để T2 là ngày đầu tuần
   const startDay = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1;
 
   const goToMonth = (newDate) => {
     setCurrentDate(newDate);
-    // Notify parent of the month key "YYYY-MM"
     const key = `${newDate.getFullYear()}-${String(newDate.getMonth() + 1).padStart(2, '0')}`;
     onMonthChange?.(key);
   };
@@ -126,10 +156,8 @@ function HealthCalendar({ cycles, getInsightForDate, getCalendarStatus, selected
           
           let bgClass = "bg-transparent text-zinc-300 hover:bg-zinc-800 cursor-pointer";
           let borderClass = "border border-transparent";
-          let textDecoration = "";
           
           if (status?.isExcluded) {
-             // Visual cue for explicitly removed date inside a period
              bgClass = "bg-zinc-900 text-zinc-500 cursor-pointer line-through opacity-70";
              borderClass = "border border-zinc-800 border-dashed";
           } else if (status?.isPeriod) {
@@ -144,7 +172,7 @@ function HealthCalendar({ cycles, getInsightForDate, getCalendarStatus, selected
 
           if (isSelected) {
             borderClass = "border-2 border-white shadow-[0_0_10px_rgba(255,255,255,0.5)]";
-            bgClass = bgClass.replace('bg-transparent', 'bg-zinc-800'); // Ensure visibility if transparent
+            bgClass = bgClass.replace('bg-transparent', 'bg-zinc-800');
             bgClass += " font-black z-10 scale-110";
           } else if (status?.isToday) {
             borderClass = "border border-white/50 ring-1 ring-rose-500/20";
@@ -174,9 +202,7 @@ function HealthCalendar({ cycles, getInsightForDate, getCalendarStatus, selected
   );
 }
 
-// ==========================================
-// MAPPING TRIỆU CHỨNG
-// ==========================================
+// Mapping triệu chứng
 const SYMPTOM_OPTIONS = [
   { id: 'cramps', icon: '😣', label: 'Đau bụng' },
   { id: 'mood', icon: '😤', label: 'Dễ cáu' },
@@ -201,383 +227,470 @@ const SYMPTOM_OPTIONS = [
 // MAIN COMPONENT
 // ==========================================
 export default function Tab5Health() {
-  const { isFemale, isMale, isLoading, getInsightForDate, getCalendarStatus, irregularityWarning, actions, profile, cycles, needsAnalysis, analysisResult } = useCycle();
-  const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const { user, partner } = useAuth();
+  
+  // Dữ liệu chu kỳ kinh nguyệt
+  const {
+    isFemale,
+    isMale,
+    isLoading: isCycleLoading,
+    getInsightForDate,
+    getCalendarStatus,
+    irregularityWarning,
+    actions: cycleActions,
+    profile: cycleProfile,
+    cycles,
+    needsAnalysis,
+    analysisResult
+  } = useCycle();
+
+  // Dữ liệu sức khỏe, nước uống, cân nặng & smartwatch
+  const {
+    todayStr,
+    isLoading: isHealthLoading,
+    myProfile,
+    partnerProfile,
+    myTodayWater,
+    partnerTodayWater,
+    myWaterGoal,
+    partnerWaterGoal,
+    myWaterLogs,
+    partnerWaterLogs,
+    weeklyWaterHistory,
+    weightLogs,
+    myActivity,
+    actions: healthActions
+  } = useHealth();
+
+  // Tab con điều hướng
+  const [activeSubTab, setActiveSubTab] = useState('overview'); // 'overview' | 'cycle' | 'metrics'
   const [selectedDateStr, setSelectedDateStr] = useState(() => new Date().toISOString().split('T')[0]);
-  const [showPeriodModal, setShowPeriodModal] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [tempPeriodLength, setTempPeriodLength] = useState(profile?.average_period_length || 5);
-  // Track which calendar month the user is currently viewing (for context-aware warnings)
   const [viewingMonthKey, setViewingMonthKey] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
 
-  // Lấy insight dựa trên ngày đang chọn (thay vì luôn là hôm nay)
-  const insight = getInsightForDate ? getInsightForDate(selectedDateStr) : null;
+  const cycleInsight = getInsightForDate ? getInsightForDate(selectedDateStr) : null;
+  const isLoading = isCycleLoading || isHealthLoading;
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center pt-20 animate-pulse">
-        <HeartPulse className="text-rose-400 mb-4" size={40} />
-        <p className="text-zinc-400">Đang đồng bộ dữ liệu sức khỏe...</p>
+      <div className="flex-1 flex flex-col items-center justify-center pt-24 animate-pulse">
+        <HeartPulse className="text-rose-400 mb-4 animate-bounce" size={44} />
+        <p className="text-zinc-300 font-bold text-sm">Đang đồng bộ dữ liệu sức khỏe...</p>
+        <p className="text-zinc-500 text-xs mt-1">Chu kỳ & Bình nước đôi</p>
       </div>
     );
   }
 
-  if (isMale && !insight) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-        <ShieldCheck className="text-zinc-500 mb-4" size={48} />
-        <h2 className="text-lg font-bold text-white mb-2">Chờ kết nối</h2>
-        <p className="text-zinc-400 text-sm">Hãy kết nối với bạn gái để mở khóa tính năng Couple Care nhé!</p>
-      </div>
-    );
-  }
-
-  // Format ngày dạng m/d
   const formatDate = (dateStr) => {
     if (!dateStr) return '--';
     const d = new Date(dateStr);
     return `${d.getDate()}/${d.getMonth() + 1}`;
   };
 
-  const handleOnboardingComplete = (lastPeriod, periodLength) => {
-    actions.startNewPeriod(lastPeriod, periodLength);
-  };
-
   return (
-    <div className="flex-1 flex flex-col space-y-5 px-1 animate-fade-in pb-10">
-      {/* HEADER TABS */}
-      <div className="flex items-center gap-3 mb-2 px-1">
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-500 to-pink-500 flex items-center justify-center shadow-lg shadow-rose-500/30">
-          <HeartPulse size={22} className="text-white" />
+    <div className="flex-1 flex flex-col space-y-4 px-1 animate-fade-in pb-12">
+      {/* 1. HEADER CHÍNH CỦA TAB SỨC KHỎE */}
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-500 via-pink-500 to-sky-500 flex items-center justify-center shadow-lg shadow-rose-500/25">
+            <HeartPulse size={22} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-lg font-black text-white tracking-tight">Sức Khỏe & Chăm Sóc</h1>
+            <p className="text-xs text-rose-300 font-medium tracking-wide">
+              {isFemale ? 'Chăm sóc bản thân & Đồng hành cùng người yêu' : 'Trợ lý sức khỏe & Chăm sóc người yêu'}
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-black text-white tracking-tight">Chu Kỳ</h1>
-          <p className="text-xs text-rose-300/80 font-medium tracking-wide">
-            {isFemale ? 'Theo dõi chu kỳ thông minh' : 'Trợ lý chăm sóc người yêu'}
-          </p>
-        </div>
+
+        {/* Nút thiết lập hồ sơ */}
+        <button
+          type="button"
+          onClick={() => setShowWizard(true)}
+          className="p-2 text-zinc-400 hover:text-white bg-zinc-900 border border-white/10 rounded-2xl transition-colors shadow-sm"
+          title="Cài đặt hồ sơ sức khỏe cá nhân"
+        >
+          <Sliders size={16} />
+        </button>
       </div>
 
-      {/* INJECT DISCLAIMER */}
-      {showDisclaimer && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-xs text-zinc-400 leading-relaxed relative">
-          <button onClick={() => setShowDisclaimer(false)} className="absolute top-2 right-2 p-1 text-zinc-500 hover:text-white">✕</button>
-          <strong className="text-white block mb-1">Cảnh báo Y khoa (Disclaimer):</strong>
-          Thông tin và dự đoán trên ứng dụng dựa trên các nghiên cứu y khoa (ACOG, WHO, NHS) và lịch sử của bạn. Tuy nhiên, nó chỉ mang tính tham khảo, KHÔNG thay thế chẩn đoán y khoa chuyên môn.
+      {/* 2. SUB-NAVIGATION PILLS (3 Tab con linh hoạt, mượt mà trên điện thoại) */}
+      <div className="flex p-1 bg-zinc-900/90 rounded-2xl border border-white/10 shadow-md">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('overview')}
+          className={`flex-1 py-2 px-1 text-center rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+            activeSubTab === 'overview'
+              ? 'bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-md shadow-sky-500/20'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          <Droplets size={13} />
+          <span>Tổng Quan & Nước</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('cycle')}
+          className={`flex-1 py-2 px-1 text-center rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+            activeSubTab === 'cycle'
+              ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-500/20'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          <HeartPulse size={13} />
+          <span>Chu Kỳ & Care</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('metrics')}
+          className={`flex-1 py-2 px-1 text-center rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+            activeSubTab === 'metrics'
+              ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md shadow-purple-500/20'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          <BarChart2 size={13} />
+          <span>Chỉ Số & Xu Hướng</span>
+        </button>
+      </div>
+
+      {/* 3. NỘI DUNG TỪNG SUB-TAB */}
+
+      {/* TAB 1: TỔNG QUAN & NƯỚC UỐNG (OVERVIEW & HYDRATION) */}
+      {activeSubTab === 'overview' && (
+        <div className="space-y-4 animate-fade-in">
+          {/* A. Hai Bình Nước Cặp Đôi (Hydration Couple) */}
+          <HydrationCouple
+            user={user}
+            partner={partner}
+            myTodayWater={myTodayWater}
+            partnerTodayWater={partnerTodayWater}
+            myWaterGoal={myWaterGoal}
+            partnerWaterGoal={partnerWaterGoal}
+            myWaterLogs={myWaterLogs}
+            partnerWaterLogs={partnerWaterLogs}
+            myProfile={myProfile}
+            actions={healthActions}
+          />
+
+          {/* B. Chăm Sóc & Động Viên Cặp Đôi (Cheers) */}
+          <CoupleHealthSharing
+            partner={partner}
+            onSendCheer={healthActions.sendCheer}
+          />
+
+          {/* C. Đồng Hồ Thông Minh (Ở dưới cùng) */}
+          <ConnectedDevices
+            myActivity={myActivity}
+            onSyncActivity={healthActions.logActivity}
+          />
         </div>
       )}
 
-      {/* MODAL IS NO LONGER NEEDED AS ACTION IS DIRECT */}
+      {/* TAB 2: CHU KỲ KINH NGUYỆT & COUPLE CARE */}
+      {activeSubTab === 'cycle' && (
+        <div className="space-y-4 animate-fade-in">
+          {/* Trợ lý chăm sóc chu kỳ */}
+          <CycleHealthCard
+            user={user}
+            partner={partner}
+            isFemale={isFemale}
+            cycleInsight={cycleInsight}
+            waterStats={{ current: myTodayWater, goal: myWaterGoal }}
+            activityData={myActivity}
+            profile={myProfile}
+          />
+          {/* Cảnh báo y khoa */}
+          {showDisclaimer && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-xs text-zinc-400 leading-relaxed relative">
+              <button onClick={() => setShowDisclaimer(false)} className="absolute top-2 right-2 p-1 text-zinc-500 hover:text-white">✕</button>
+              <strong className="text-white block mb-1">Cảnh báo Y khoa (Disclaimer):</strong>
+              Thông tin và dự đoán trên ứng dụng dựa trên các nghiên cứu y khoa (ACOG, WHO, NHS) và lịch sử của bạn. Nó chỉ mang tính tham khảo, KHÔNG thay thế chẩn đoán y khoa chuyên môn.
+            </div>
+          )}
 
-      {/* DASHBOARD NỮ */}
-      {isFemale && (
-        <div className="relative">
-          {/* Header Actions */}
-          <div className="absolute -top-12 right-0 flex gap-2">
-            <button 
-              onClick={() => setShowResetConfirm(true)}
-              className="px-3 py-1.5 bg-zinc-800 hover:bg-rose-900/50 text-zinc-400 hover:text-rose-400 rounded-xl text-xs font-bold transition-colors border border-transparent hover:border-rose-500/30 flex items-center gap-1"
-            >
-              <Settings size={14} /> Khởi tạo lại
-            </button>
-          </div>
-          
-          {cycles.length === 0 ? (
-            <Onboarding onComplete={handleOnboardingComplete} />
-          ) : (
-            <>
-              {/* COMPONENT LỊCH (CALENDAR) */}
+          {/* DÀNH CHO NỮ */}
+          {isFemale && (
+            <div className="space-y-4">
+              <div className="flex justify-end pr-1">
+                <button 
+                  onClick={() => setShowResetConfirm(true)}
+                  className="px-3 py-1.5 bg-zinc-800/80 hover:bg-rose-900/40 text-zinc-400 hover:text-rose-300 rounded-xl text-xs font-bold transition-colors border border-transparent hover:border-rose-500/30 flex items-center gap-1"
+                >
+                  <Settings size={13} /> Khởi tạo lại chu kỳ
+                </button>
+              </div>
+
+              {cycles.length === 0 ? (
+                <Onboarding onComplete={(lp, pl) => cycleActions.startNewPeriod(lp, pl)} />
+              ) : (
+                <>
+                  {/* Lịch chu kỳ */}
+                  <HealthCalendar 
+                    cycles={cycles}
+                    getInsightForDate={getInsightForDate}
+                    getCalendarStatus={getCalendarStatus}
+                    selectedDateStr={selectedDateStr}
+                    onSelectDate={setSelectedDateStr}
+                    onMonthChange={setViewingMonthKey}
+                  />
+
+                  {/* Thanh thao tác ngày đang chọn */}
+                  <div className="flex justify-between items-center px-2 py-1">
+                    <div>
+                      <h2 className="text-sm font-bold text-white">
+                        {selectedDateStr === todayStr ? 'Hôm nay' : formatDate(selectedDateStr)}
+                      </h2>
+                      <p className="text-xs text-zinc-400">
+                        {cycleInsight?.cycleDay > 0 ? `Ngày thứ ${cycleInsight.cycleDay} của chu kỳ` : 'Ngoài chu kỳ ghi nhận'}
+                      </p>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      {cycleInsight?.isConfirmedPeriod ? (
+                        <button 
+                          onClick={() => cycleActions.togglePeriodDay(selectedDateStr)}
+                          className="px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-rose-400 border border-rose-500/30 text-xs font-bold rounded-xl transition-all active:scale-95"
+                        >
+                          - Xóa ngày
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => cycleActions.togglePeriodDay(selectedDateStr)}
+                          className="px-3.5 py-1.5 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 shadow-md shadow-rose-500/20 text-white text-xs font-bold rounded-xl transition-all active:scale-95"
+                        >
+                          + Kinh nguyệt
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Phân tích chu kỳ */}
+                  <div className="glass-panel p-5 rounded-3xl border border-rose-500/20">
+                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                      <BarChart2 size={16} className="text-rose-400"/> Phân tích chu kỳ
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div className="bg-zinc-900/60 p-3 rounded-2xl text-center border border-zinc-800">
+                        <span className="text-xl font-black text-white">{cycleProfile?.average_cycle_length || 28}</span>
+                        <span className="text-[10px] text-zinc-400 font-medium block">Vòng kinh TB (ngày)</span>
+                      </div>
+                      <div className="bg-zinc-900/60 p-3 rounded-2xl text-center border border-zinc-800">
+                        <span className="text-xl font-black text-rose-400">{cycleProfile?.average_period_length || 5}</span>
+                        <span className="text-[10px] text-zinc-400 font-medium block">Hành kinh TB (ngày)</span>
+                      </div>
+                    </div>
+
+                    {irregularityWarning ? (
+                      <div className="flex gap-2 items-start bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                        <AlertTriangle size={14} className="text-amber-500 mt-0.5 shrink-0" />
+                        <p className="text-[11px] text-amber-200/90 leading-relaxed font-medium">{irregularityWarning}</p>
+                      </div>
+                    ) : cycles.length >= 3 ? (
+                      <div className="flex gap-2 items-start bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20">
+                        <CheckCircle size={14} className="text-emerald-500 mt-0.5 shrink-0" />
+                        <p className="text-[11px] text-emerald-200/90 leading-relaxed font-medium">Chu kỳ của bạn đang rất đều đặn dựa trên 3 tháng gần nhất.</p>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 items-start bg-zinc-800/50 p-3 rounded-xl border border-zinc-700/50">
+                        <Info size={14} className="text-zinc-400 mt-0.5 shrink-0" />
+                        <p className="text-[11px] text-zinc-400 leading-relaxed font-medium">Cần ghi nhận ít nhất 3 chu kỳ để hệ thống đánh giá độ đều đặn.</p>
+                      </div>
+                    )}
+
+                    {cycles.length >= 1 && (
+                      <button 
+                        onClick={() => needsAnalysis && cycleActions.forceAnalyzeCycles()}
+                        disabled={!needsAnalysis}
+                        className={`w-full mt-3 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 border ${
+                          needsAnalysis
+                            ? 'bg-gradient-to-r from-rose-600 to-pink-600 text-white border-rose-500/40 shadow-lg shadow-rose-500/20 active:scale-95'
+                            : 'bg-zinc-900/60 text-zinc-600 border-zinc-800/50 cursor-not-allowed'
+                        }`}
+                      >
+                        {needsAnalysis ? '🔍 Cập nhật & Phân tích chu kỳ' : '✔️ Đã phân tích cập nhật'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Lời khuyên y khoa dành cho bạn nữ */}
+                  {cycleInsight?.evidence && (
+                    <div className="glass-panel p-5 rounded-3xl border-l-4 border-rose-500">
+                      <span className="px-2.5 py-1 bg-white/10 rounded-lg text-rose-300 text-[10px] font-bold uppercase tracking-wider">
+                        Giai đoạn: {cycleInsight.evidence.name}
+                      </span>
+                      <p className="text-xs text-zinc-200 leading-relaxed my-3">
+                        {cycleInsight.evidence.female_insight}
+                      </p>
+                      
+                      <div className="space-y-2.5">
+                        {cycleInsight.evidence.recommendations?.map((rec) => (
+                          <div key={rec.id} className="bg-zinc-900/60 rounded-2xl p-3 border border-zinc-800">
+                            <h4 className="text-xs font-bold text-rose-300 mb-1">{rec.title}</h4>
+                            <p className="text-[11px] text-zinc-400 leading-relaxed mb-1">{rec.content}</p>
+                            <span className="text-[9px] text-zinc-600 italic">Nguồn: {rec.source_name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ghi nhận triệu chứng */}
+                  <div className="glass-panel p-5 rounded-3xl">
+                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                      <Smile size={16} className="text-amber-400"/> Bạn cảm thấy thế nào hôm nay?
+                    </h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      {SYMPTOM_OPTIONS.map(symp => {
+                        const isSelected = cycleInsight?.symptomsToday?.some(s => s.symptom_type === symp.id);
+                        return (
+                          <button 
+                            key={symp.id}
+                            onClick={() => cycleActions.logSymptom(selectedDateStr, symp.id, 'moderate')}
+                            className={`py-2 px-1 rounded-2xl flex flex-col items-center gap-1 transition-all border ${
+                              isSelected 
+                                ? 'bg-rose-500/20 border-rose-500 text-rose-300 shadow-sm' 
+                                : 'bg-zinc-800/40 hover:bg-zinc-800 border-transparent text-zinc-300'
+                            }`}
+                          >
+                            <span className="text-xl">{symp.icon}</span>
+                            <span className="text-[10px] font-medium">{symp.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* DÀNH CHO BẠN NAM */}
+          {isMale && (
+            <div className="space-y-4">
               <HealthCalendar 
                 cycles={cycles}
                 getInsightForDate={getInsightForDate}
                 getCalendarStatus={getCalendarStatus}
                 selectedDateStr={selectedDateStr}
                 onSelectDate={setSelectedDateStr}
-                onMonthChange={setViewingMonthKey}
               />
 
-               <div className="flex justify-between items-center px-1">
-                 <div>
-                   <h2 className="text-sm font-bold text-white">
-                     {selectedDateStr === new Date().toISOString().split('T')[0] ? 'Hôm nay' : formatDate(selectedDateStr)}
-                   </h2>
-                   <p className="text-xs text-zinc-400">Ngày thứ {insight?.cycleDay > 0 ? insight?.cycleDay : '--'} của chu kỳ</p>
-                 </div>
-                 
-                 <div className="flex gap-2">
-                   {insight?.isConfirmedPeriod ? (
-                     <button 
-                       onClick={() => actions.togglePeriodDay(selectedDateStr)}
-                       className="px-4 py-2 bg-zinc-800/80 hover:bg-zinc-700 text-rose-500 border border-rose-500/30 text-xs font-bold rounded-xl transition-all active:scale-95"
-                     >
-                       - Xóa ngày
-                     </button>
-                   ) : (
-                     <button 
-                       onClick={() => actions.togglePeriodDay(selectedDateStr)}
-                       className="px-4 py-2 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 shadow-md shadow-rose-500/20 text-white text-xs font-bold rounded-xl transition-all active:scale-95"
-                     >
-                       + Kinh nguyệt
-                     </button>
-                   )}
-                 </div>
-              </div>
+              {/* Status Card cho Nam */}
+              <div className="glass-panel p-5 rounded-3xl border border-rose-500/20">
+                <span className="text-zinc-400 text-xs font-bold uppercase block mb-1">
+                  {selectedDateStr === todayStr ? 'Hôm nay' : `Ngày ${formatDate(selectedDateStr)}`}
+                </span>
+                <h2 className="text-xl font-black text-white mb-2">
+                  Ngày thứ {cycleInsight?.cycleDay > 0 ? cycleInsight.cycleDay : '--'} của chu kỳ cô ấy
+                </h2>
 
-              {/* PHÂN TÍCH CHU KỲ (Dựa trên 3 chu kỳ gần nhất) */}
-              <div className="glass-panel p-5 rounded-3xl mt-4 mb-4 border border-rose-500/20 shadow-[0_8px_30px_rgba(244,63,94,0.05)]">
-                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                  <BarChart2 size={16} className="text-rose-400"/> Phân tích chu kỳ
-                </h3>
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div className="bg-zinc-900/50 p-3 rounded-2xl flex flex-col justify-center items-center text-center border border-zinc-800/50">
-                    <span className="text-xl font-black text-white">{profile?.average_cycle_length || 28}</span>
-                    <span className="text-[10px] text-zinc-400 font-medium">Vòng kinh (ngày)</span>
-                  </div>
-                  <div className="bg-zinc-900/50 p-3 rounded-2xl flex flex-col justify-center items-center text-center border border-zinc-800/50">
-                    <span className="text-xl font-black text-rose-400">{profile?.average_period_length || 5}</span>
-                    <span className="text-[10px] text-zinc-400 font-medium">Hành kinh (ngày)</span>
-                  </div>
-                </div>
-                {irregularityWarning ? (
-                  <div className="flex gap-2 items-start bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
-                    <AlertTriangle size={14} className="text-amber-500 mt-0.5 shrink-0" />
-                    <p className="text-[11px] text-amber-200/90 leading-relaxed font-medium">{irregularityWarning}</p>
-                  </div>
-                ) : cycles.length >= 3 ? (
-                  <div className="flex gap-2 items-start bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20">
-                    <CheckCircle size={14} className="text-emerald-500 mt-0.5 shrink-0" />
-                    <p className="text-[11px] text-emerald-200/90 leading-relaxed font-medium">Chu kỳ của bạn đang rất đều đặn dựa trên 3 tháng gần nhất.</p>
-                  </div>
-                ) : (
-                  <div className="flex gap-2 items-start bg-zinc-800/50 p-3 rounded-xl border border-zinc-700/50">
-                    <Info size={14} className="text-zinc-400 mt-0.5 shrink-0" />
-                    <p className="text-[11px] text-zinc-400 leading-relaxed font-medium">Cần ghi nhận ít nhất 3 chu kỳ để hệ thống đánh giá mức độ đều đặn.</p>
-                  </div>
-                )}
-                
-                {cycles.length >= 1 && (
-                  <button 
-                    onClick={() => needsAnalysis && actions.forceAnalyzeCycles()}
-                    disabled={!needsAnalysis}
-                    className={`w-full mt-3 py-2.5 text-[12px] font-bold rounded-xl transition-all flex items-center justify-center gap-2 border ${
-                      needsAnalysis
-                        ? 'bg-gradient-to-r from-rose-600/80 to-pink-600/80 hover:from-rose-500 hover:to-pink-500 text-white border-rose-500/40 shadow-lg shadow-rose-500/20 active:scale-95 cursor-pointer'
-                        : 'bg-zinc-900/60 text-zinc-600 border-zinc-800/50 cursor-not-allowed'
-                    }`}
-                  >
-                    {needsAnalysis ? '🔍 Bắt đầu phân tích & Cập nhật lịch' : '✔️ Đã phân tích — Chỉnh sửa thêm để phân tích lại'}
-                  </button>
+                {cycleInsight?.evidence && (
+                  <span className="inline-block px-3 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold mb-3">
+                    Giai đoạn: {cycleInsight.evidence.name}
+                  </span>
                 )}
 
-                {/* WARNINGS FROM LAST ANALYSIS — filtered to the month being viewed */}
-                {(() => {
-                  const monthWarnings = (analysisResult?.warnings || []).filter(w =>
-                    // 'hormonal' warnings have a month key embedded in the message
-                    // Others (cycle variability) always show
-                    !w.monthKey || w.monthKey === viewingMonthKey
-                  );
-                  if (monthWarnings.length === 0) return null;
-                  return (
-                    <div className="mt-3 space-y-2">
-                      {monthWarnings.map((w, i) => (
-                        <div key={i} className={`p-3 rounded-xl border ${
-                          w.severity === 'high'
-                            ? 'bg-red-500/10 border-red-500/30'
-                            : 'bg-amber-500/10 border-amber-500/25'
-                        }`}>
-                          <div className={`text-[11px] font-bold mb-1.5 ${ w.severity === 'high' ? 'text-red-300' : 'text-amber-300'}`}>
-                            {w.severity === 'high' ? '⚠️' : 'ℹ️'} {w.message}
-                          </div>
-                          <p className="text-[10px] text-zinc-400 leading-relaxed">{w.advice}</p>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
+                <p className="text-xs text-zinc-300 leading-relaxed font-medium">
+                  {cycleInsight?.evidence?.male_insight || 'Chưa có thông tin. Hãy nhắc cô ấy cập nhật lịch nhé!'}
+                </p>
               </div>
 
-              {/* LỜI KHUYÊN Y KHOA DÀNH CHO NỮ */}
-              {insight?.evidence && (
-                <div className="glass-panel p-5 rounded-3xl border-l-4 border-rose-500">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="px-2.5 py-1 bg-white/10 rounded-lg text-rose-300 text-[10px] font-bold uppercase tracking-wider">
-                      Giai đoạn: {insight.evidence.name}
-                    </span>
-                  </div>
-                  <p className="text-sm text-zinc-200 leading-relaxed mb-4">
-                    {insight.evidence.female_insight}
-                  </p>
-                  
-                  {/* Từng Recommendation */}
-                  <div className="space-y-3">
-                    {insight.evidence.recommendations?.map((rec) => (
-                      <div key={rec.id} className="bg-zinc-900/50 rounded-2xl p-3 border border-zinc-800/50">
-                        <div className="flex justify-between items-start mb-1">
-                          <h4 className="text-xs font-bold text-rose-300">{rec.title}</h4>
-                          <button onClick={() => setShowDisclaimer(true)} className="text-zinc-500 hover:text-white"><Info size={14}/></button>
+              {/* Couple care tips */}
+              {cycleInsight?.evidence?.couple_care_tips && (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 shadow-md">
+                  <h3 className="text-sm font-bold text-amber-300 mb-3 flex items-center gap-2">
+                    <Coffee size={16} /> Gợi ý hành động yêu thương
+                  </h3>
+                  <ul className="space-y-3">
+                    {cycleInsight.evidence.couple_care_tips.map((tip, idx) => (
+                      <li key={idx} className="flex gap-2.5 items-start">
+                        <div className="w-5 h-5 rounded-full bg-amber-400/10 text-amber-400 flex items-center justify-center text-[10px] font-bold mt-0.5">
+                          {idx + 1}
                         </div>
-                        <p className="text-[11px] text-zinc-400 leading-relaxed mb-1">
-                          {rec.content}
-                        </p>
-                        <div className="text-[9px] text-zinc-600 font-medium italic">
-                          Nguồn: {rec.source_name}
-                        </div>
-                      </div>
+                        <p className="text-xs text-zinc-300 leading-relaxed">{tip}</p>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               )}
-
-              {/* SYMPTOM TRACKING */}
-              <div className="glass-panel p-5 rounded-3xl">
-                <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
-                  <Smile size={16} className="text-amber-400"/> Bạn cảm thấy thế nào?
-                </h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {SYMPTOM_OPTIONS.map(symp => {
-                    const isSelected = insight?.symptomsToday?.some(s => s.symptom_type === symp.id);
-                    return (
-                      <button 
-                        key={symp.id}
-                        onClick={() => actions.logSymptom(selectedDateStr, symp.id, 'moderate')}
-                        className={`py-2.5 px-2 rounded-2xl flex flex-col items-center gap-1.5 transition-all border ${
-                          isSelected 
-                            ? 'bg-rose-500/20 border-rose-500/50 text-rose-300' 
-                            : 'bg-zinc-800/50 hover:bg-zinc-700/50 border-transparent hover:border-zinc-700 text-zinc-300'
-                        }`}
-                      >
-                        <span className="text-xl">{symp.icon}</span>
-                        <span className="text-[10px] font-medium">{symp.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-                
-              </div>
-            </>
+            </div>
           )}
         </div>
       )}
 
-      {/* RESET CONFIRMATION MODAL */}
+      {/* TAB 3: CHỈ SỐ CƠ THỂ & XU HƯỚNG (METRICS & TRENDS) */}
+      {activeSubTab === 'metrics' && (
+        <div className="space-y-4 animate-fade-in">
+          {/* Card Cân nặng & Mục tiêu */}
+          <WeightGoalCard
+            profile={myProfile}
+            weightLogs={weightLogs}
+            onLogWeight={healthActions.logWeight}
+            onOpenWizard={() => setShowWizard(true)}
+          />
+
+          {/* Phân tích Calo, BMR & TDEE */}
+          <CalorieInsights
+            profile={myProfile}
+            userGender={user?.gender}
+            activityData={myActivity}
+          />
+
+          {/* Biểu đồ xu hướng từ dữ liệu thật */}
+          <HealthCharts
+            weeklyWaterHistory={weeklyWaterHistory}
+            weightLogs={weightLogs}
+            myWaterGoal={myWaterGoal}
+          />
+        </div>
+      )}
+
+      {/* WIZARD THIẾT LẬP HỒ SƠ SỨC KHỎE */}
+      <HealthProfileWizard
+        isOpen={showWizard}
+        onClose={() => setShowWizard(false)}
+        initialData={myProfile || {}}
+        onSave={healthActions.updateProfile}
+      />
+
+      {/* MODAL RESET CHU KỲ */}
       {showResetConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-zinc-900 p-6 rounded-[28px] max-w-sm w-full border border-rose-500/30 shadow-[0_20px_60px_rgba(244,63,94,0.15)] flex flex-col items-center text-center">
-            <div className="w-16 h-16 bg-rose-500/20 rounded-full flex items-center justify-center mb-4 border border-rose-500/30">
-              <Frown size={32} className="text-rose-400" />
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-zinc-900 p-6 rounded-[28px] max-w-sm w-full border border-rose-500/30 text-center">
+            <div className="w-14 h-14 bg-rose-500/20 rounded-full flex items-center justify-center mb-3 mx-auto border border-rose-500/30">
+              <Frown size={28} className="text-rose-400" />
             </div>
-            
-            <h3 className="text-xl font-black text-white mb-2">Khởi tạo lại?</h3>
-            <p className="text-zinc-400 text-sm font-medium mb-6">
-              Bạn có chắc chắn muốn xóa TOÀN BỘ lịch sử chu kỳ và các triệu chứng không? Dữ liệu này không thể khôi phục lại được đâu nhé!
+            <h3 className="text-lg font-black text-white mb-2">Khởi tạo lại chu kỳ?</h3>
+            <p className="text-zinc-400 text-xs font-medium mb-5 leading-relaxed">
+              Dữ liệu chu kỳ và các triệu chứng sẽ được xóa để bạn thiết lập lại từ đầu.
             </p>
-            
-            <div className="flex gap-3 w-full">
+            <div className="flex gap-2.5">
               <button 
                 onClick={() => setShowResetConfirm(false)} 
-                className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl transition-colors"
+                className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl text-xs transition-colors"
               >
                 Hủy
               </button>
               <button 
                 onClick={() => {
-                  actions.resetAllCycles();
+                  cycleActions.resetAllCycles();
                   setShowResetConfirm(false);
                 }}
-                className="flex-1 py-3 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 shadow-md shadow-rose-500/20 text-white font-bold rounded-xl transition-all"
+                className="flex-1 py-2.5 bg-gradient-to-r from-rose-500 to-pink-500 text-white font-bold rounded-xl text-xs shadow-md shadow-rose-500/20"
               >
                 Đồng ý Xóa
               </button>
             </div>
           </div>
         </div>
-      )}
-
-      {isMale && (
-        <>
-              {/* LỊCH VIEW CHO NAM */}
-              <HealthCalendar 
-                cycles={cycles}
-                getInsightForDate={getInsightForDate}
-                getCalendarStatus={getCalendarStatus}
-                selectedDateStr={selectedDateStr}
-                onSelectDate={setSelectedDateStr}
-              />
-
-              {/* STATUS CARD */}
-              <div className="glass-panel p-6 rounded-[32px] flex flex-col relative overflow-hidden border border-rose-500/20 shadow-[0_8px_30px_rgba(244,63,94,0.1)]">
-                <div className="absolute top-[-20px] right-[-20px] w-40 h-40 bg-pink-500/10 blur-3xl rounded-full" />
-                
-                <p className="text-zinc-400 text-xs font-bold tracking-widest uppercase mb-1">
-                  {selectedDateStr === new Date().toISOString().split('T')[0] ? 'Hôm nay' : `Ngày ${formatDate(selectedDateStr)}`}
-                </p>
-                <h2 className="text-2xl font-black text-white mb-2 leading-tight">Ngày thứ {insight?.cycleDay > 0 ? insight?.cycleDay : '--'} của chu kỳ</h2>
-                
-                {insight?.evidence && (
-                  <div className="inline-block mt-1 mb-2">
-                    <span className="px-3 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold uppercase">
-                      Giai đoạn: {insight.evidence.name}
-                    </span>
-                  </div>
-                )}
-                
-                <p className="text-sm text-zinc-300 leading-relaxed font-medium">
-                  {insight?.evidence?.male_insight || 'Chưa có thông tin. Hãy nhắc cô ấy cập nhật lịch nhé!'}
-                </p>
-              </div>
-
-              {/* LỜI KHUYÊN Y KHOA: CẢNH BÁO CHO NAM */}
-              {insight?.evidence?.couple_care_tips && (
-                <div className="bg-gradient-to-br from-zinc-900 to-zinc-900/80 border border-zinc-800 rounded-3xl p-5 shadow-md mt-2">
-                  <h3 className="text-sm font-bold text-amber-300 mb-4 flex items-center gap-2">
-                    <Coffee size={16} /> Gợi ý hành động hôm nay
-                  </h3>
-                  <ul className="space-y-4">
-                    {insight.evidence.couple_care_tips.map((tip, idx) => (
-                      <li key={idx} className="flex gap-3 items-start">
-                        <div className="w-6 h-6 rounded-full bg-amber-400/10 text-amber-400 flex flex-shrink-0 items-center justify-center text-[10px] font-black mt-0.5">
-                          {idx + 1}
-                        </div>
-                        <p className="text-xs text-zinc-300 leading-relaxed pt-0.5">{tip}</p>
-                      </li>
-                    ))}
-                  </ul>
-                  
-                  {/* Nút Why am I seeing this? */}
-                  <div className="mt-4 pt-3 border-t border-zinc-800/50">
-                    <button onClick={() => setShowDisclaimer(true)} className="flex items-center gap-1.5 text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors">
-                      <Info size={12}/> Cơ sở khoa học của những lời khuyên này?
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* SYMPTOMS LOGGED */}
-              <div className="glass-panel p-5 rounded-3xl mt-4 border-dashed border-rose-500/30">
-                <h3 className="text-xs font-bold text-rose-300 mb-3 flex items-center gap-2 uppercase tracking-wide">
-                  <Smile size={14} /> Trạng thái của cô ấy hôm nay
-                </h3>
-                {insight?.symptomsToday?.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {insight.symptomsToday.map(s => {
-                      const sympConfig = SYMPTOM_OPTIONS.find(opt => opt.id === s.symptom_type) || { icon: '•', label: s.symptom_type };
-                      return (
-                        <span key={s.id} className="px-3 py-1.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs text-rose-200 font-medium shadow-sm flex items-center gap-1">
-                          {sympConfig.icon} {sympConfig.label}
-                        </span>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-zinc-500 font-medium italic">
-                    Hôm nay cô ấy chưa ghi nhận cảm xúc hay triệu chứng nào.
-                  </p>
-                )}
-              </div>
-        </>
       )}
     </div>
   );

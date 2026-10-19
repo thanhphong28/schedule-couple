@@ -3,7 +3,7 @@ import { useApp } from './context/AppContext.jsx';
 import { useAuth } from './context/AuthContext.jsx';
 import Header from './components/Header.jsx';
 import Tab1Today from './components/tabs/Tab1Today.jsx';
-import Tab2WeekPlan from './components/tabs/Tab2WeekPlan.jsx';
+import TabLocation from './components/tabs/TabLocation.jsx';
 import Tab3Dashboard from './components/tabs/Tab3Dashboard.jsx';
 import Tab4Profile from './components/tabs/Tab4Profile.jsx';
 import Tab5Health from './components/tabs/Tab5Health.jsx';
@@ -13,13 +13,13 @@ import { ToastContainer } from './components/shared/Toast.jsx';
 import { Celebration } from './components/shared/Celebration.jsx';
 import ThemeSystem from './components/theme/ThemeSystem.jsx';
 import { createPortal } from 'react-dom';
-import { CalendarDays, CalendarRange, Sparkles, User, HeartPulse, X } from 'lucide-react';
+import { CalendarDays, MapPin, Sparkles, User, HeartPulse, X } from 'lucide-react';
 
 const TABS = [
   { id: 0, icon: CalendarDays, label: 'Hôm Nay', desc: 'Lịch & việc' },
-  { id: 1, icon: CalendarRange, label: 'Cả Tuần', desc: 'Kế hoạch' },
-  { id: 2, icon: Sparkles, label: 'Thống Kê', desc: 'Nhật ký & số liệu' },
-  { id: 4, icon: HeartPulse, label: 'Chu Kỳ', desc: 'Chu kỳ & Couple Care' },
+  { id: 5, icon: MapPin, label: 'Vị Trí', desc: 'Couple Live Map' },
+  { id: 2, icon: Sparkles, label: 'Thống Kê', desc: 'Tuần & Hành trình' },
+  { id: 4, icon: HeartPulse, label: 'Sức Khỏe', desc: 'Wellness & Nước' },
   { id: 3, icon: User, label: 'Hồ Sơ', desc: 'Cá nhân & Kết nối' },
 ];
 
@@ -148,8 +148,8 @@ function AppContent() {
 
         <main className="flex-1 w-full pb-28 pt-1">
           {activeTab === 0 && <Tab1Today />}
-          {activeTab === 1 && <Tab2WeekPlan />}
-          {activeTab === 2 && <Tab3Dashboard />}
+          {activeTab === 5 && <TabLocation />}
+          {(activeTab === 2 || activeTab === 1) && <Tab3Dashboard />}
           {activeTab === 4 && <Tab5Health />}
           {activeTab === 3 && <Tab4Profile />}
         </main>

@@ -296,14 +296,24 @@ export default function Tab5Health() {
   });
 
   const cycleInsight = getInsightForDate ? getInsightForDate(selectedDateStr) : null;
-  const isLoading = isCycleLoading || isHealthLoading;
+  
+  // Áp dụng Stale-While-Revalidate: Nếu đã có dữ liệu cache (hồ sơ, nước, chu kỳ), lập tức render ngay (< 16ms)!
+  // Chỉ hiển thị màn hình chờ nếu là lần đầu tiên mở app và chưa có bất kỳ dữ liệu nào
+  const hasCachedData = Boolean(
+    myProfile || 
+    partnerProfile || 
+    myTodayWater > 0 || 
+    (myWaterLogs && myWaterLogs.length > 0) || 
+    (cycles && cycles.length > 0)
+  );
+  const showBlockingLoading = (isCycleLoading || isHealthLoading) && !hasCachedData;
 
-  if (isLoading) {
+  if (showBlockingLoading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center pt-24 animate-pulse">
         <HeartPulse className="text-rose-400 mb-4 animate-bounce" size={44} />
         <p className="text-zinc-300 font-bold text-sm">Đang đồng bộ dữ liệu sức khỏe...</p>
-        <p className="text-zinc-500 text-xs mt-1">Chu kỳ & Bình nước đôi</p>
+        <p className="text-zinc-500 text-xs mt-1">Chu kỳ &amp; Bình nước đôi</p>
       </div>
     );
   }

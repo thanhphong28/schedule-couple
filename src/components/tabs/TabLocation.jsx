@@ -1,27 +1,52 @@
 // components/tabs/TabLocation.jsx
 // Tab Vị Trí Cặp Đôi (Couple Live Map)
-// Bản đồ thời gian thực hiển thị vị trí hai người yêu, khoảng cách, tốc độ, địa chỉ và quyền riêng tư
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { createPortal } from 'react-dom';
+// Bản đồ thời gian thực hiển thị vị trí hai người yêu, lộ trình di chuyển trực tiếp (như Messenger), khoảng cách, tốc độ, địa chỉ và chế độ đi đường chạy ngầm
+import { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import 'leaflet-rotate';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { useCoupleLocation } from '../../hooks/useCoupleLocation.js';
+import { useLocation } from '../../context/LocationContext.jsx';
 import { 
   formatDistance, 
   formatSpeed, 
   formatTimeAgo,
-  getGoogleMapsDirectionsUrl,
-  getGoogleMapsSearchUrl
+  getGoogleMapsDirectionsUrl
 } from '../../services/geolocationService.js';
 import { 
-  Navigation, Heart, MapPin, Shield, RefreshCw, Layers, 
-  Send, Compass, Battery, BatteryCharging, AlertTriangle, 
-  Check, X, Eye, EyeOff, Sparkles, Plus, Trash2, Home, Briefcase, Coffee,
-  ExternalLink, Sun, ChevronUp, ChevronDown
+  Navigation, Heart, MapPin, Shield, Layers, 
+  Send, Battery, BatteryCharging, AlertTriangle, 
+  X, Plus, Trash2, ExternalLink, ChevronUp,
+  Route, Radio
 } from 'lucide-react';
 import { showToast } from '../shared/Toast.jsx';
+
+// Cấu hình Tile Providers Google Maps & Vệ tinh siêu nét (Tiếng Việt đầy đủ, KHÔNG watermark, KHÔNG cần API key)
+const TILE_PROVIDERS = {
+  hybrid: {
+    id: 'hybrid',
+    name: 'Vệ Tinh Google 🛰️',
+    url: 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    maxZoom: 20,
+    className: ''
+  },
+  dark: {
+    id: 'dark',
+    name: 'Bản Đồ Đêm 🌙',
+    url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    maxZoom: 20,
+    className: 'google-dark-tiles'
+  },
+  roadmap: {
+    id: 'roadmap',
+    name: 'Đường Phố Google 🗺️',
+    url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    maxZoom: 20,
+    className: ''
+  }
+};
 
 export default function TabLocation() {
   const { user, partner } = useAuth();
@@ -36,12 +61,14 @@ export default function TabLocation() {
     addSavedPlace,
     deleteSavedPlace,
     gpsStatus,
-    gpsError,
     isRealtimeConnected,
     sendQuickStatus,
-    myStatusMessage,
-    refreshLocation
-  } = useCoupleLocation();
+    refreshLocation,
+    partnerTrail,
+    myTrail,
+    showRouteTrail,
+    setShowRouteTrail
+  } = useLocation();
 
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -52,78 +79,35 @@ export default function TabLocation() {
   const polylineGlowRef = useRef(null);
   const distanceBadgeMarkerRef = useRef(null);
   const placesLayerRef = useRef(null);
+  const partnerTrailLayerRef = useRef(null);
+  const trailStartMarkerRef = useRef(null);
 
-  // Chế độ bản đồ: 'dark' (CartoDB Dark Matter) | 'light' (CartoDB Voyager)
-  const [mapStyle, setMapStyle] = useState('dark');
-  const [mapBearing, setMapBearing] = useState(0);
+  // Chế độ bản đồ: 'hybrid' (Vệ tinh Google) | 'dark' (Bản đồ đêm) | 'roadmap' (Đường phố)
+  const [mapStyle, setMapStyle] = useState('hybrid');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showPlacesModal, setShowPlacesModal] = useState(false);
   const [newPlaceName, setNewPlaceName] = useState('');
   const [newPlaceCategory, setNewPlaceCategory] = useState('home');
   const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+
   const hasFittedBothRef = useRef(false);
   const hasFittedMyLocRef = useRef(false);
-
-  const [wakeLockActive, setWakeLockActive] = useState(false);
-  const wakeLockRef = useRef(null);
-
-  // Bật/tắt giữ sáng màn hình khi di chuyển (Screen Wake Lock API)
-  const toggleWakeLock = async () => {
-    if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) {
-      showToast('Trình duyệt chưa hỗ trợ tính năng giữ sáng màn hình', 'info');
-      return;
-    }
-    if (wakeLockActive) {
-      if (wakeLockRef.current) {
-        await wakeLockRef.current.release().catch(() => {});
-        wakeLockRef.current = null;
-      }
-      setWakeLockActive(false);
-      showToast('Đã tắt giữ sáng màn hình', 'info');
-    } else {
-      try {
-        wakeLockRef.current = await navigator.wakeLock.request('screen');
-        setWakeLockActive(true);
-        showToast('Đã bật giữ sáng màn hình khi di chuyển 💡', 'success');
-        wakeLockRef.current.addEventListener('release', () => {
-          setWakeLockActive(false);
-        });
-      } catch (err) {
-        console.warn('Wake Lock error:', err);
-        showToast('Không thể kích hoạt giữ sáng màn hình', 'info');
-      }
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (wakeLockRef.current) {
-        wakeLockRef.current.release().catch(() => {});
-        wakeLockRef.current = null;
-      }
-    };
-  }, []);
 
   // ─── 1. KHỞI TẠO BẢN ĐỒ LEAFLET ───
   useEffect(() => {
     if (!mapContainerRef.current) return;
     if (mapInstanceRef.current) return;
 
-    // Tọa độ mặc định (Việt Nam) nếu chưa có GPS
     const defaultLat = myLocation?.latitude || partnerLocation?.latitude || 10.7960;
     const defaultLng = myLocation?.longitude || partnerLocation?.longitude || 106.6840;
 
+    // Khởi tạo bản đồ 2D siêu mượt (Tắt touchRotate để loại bỏ hoàn toàn lỗi xén góc tam giác trắng khi pinch-to-zoom)
     const map = L.map(mapContainerRef.current, {
       center: [defaultLat, defaultLng],
       zoom: 15,
       zoomControl: false,
       attributionControl: false,
-      // Cấu hình cử chỉ vuốt & xoay mượt mà chuẩn Google Maps
-      rotate: true,
-      touchRotate: true,
-      rotateControl: false,
-      bearing: 0,
       inertia: true,
       inertiaDeceleration: 3000,
       inertiaMaxSpeed: 2000,
@@ -135,36 +119,44 @@ export default function TabLocation() {
       markerZoomAnimation: true
     });
 
-    // Lắng nghe sự kiện xoay bản đồ bằng 2 ngón tay
-    map.on('rotate', () => {
-      const b = Math.round(map.getBearing?.() || 0);
-      setMapBearing(b);
-    });
-
-    const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-    const tiles = L.tileLayer(tileUrl, {
-      maxZoom: 19,
-      subdomains: 'abc',
-      className: mapStyle === 'dark' ? 'romantic-dark-tiles' : ''
+    const activeConfig = TILE_PROVIDERS[mapStyle] || TILE_PROVIDERS.hybrid;
+    const tiles = L.tileLayer(activeConfig.url, {
+      maxZoom: activeConfig.maxZoom,
+      subdomains: activeConfig.subdomains,
+      className: activeConfig.className || ''
     }).addTo(map);
 
-    // Layer nhóm cho các địa điểm đã lưu
+    // Layer nhóm cho các địa điểm đã lưu & Lộ trình di chuyển
     const placesLayer = L.layerGroup().addTo(map);
     placesLayerRef.current = placesLayer;
+
+    const trailLayer = L.layerGroup().addTo(map);
+    partnerTrailLayerRef.current = trailLayer;
 
     mapInstanceRef.current = map;
     mapInstanceRef.current._tileLayer = tiles;
     setMapReady(true);
 
-    // Đảm bảo Leaflet tính toán chính xác kích thước container sau khi DOM render
-    const t1 = setTimeout(() => map.invalidateSize(), 50);
-    const t2 = setTimeout(() => map.invalidateSize(), 200);
-    const t3 = setTimeout(() => map.invalidateSize(), 500);
+    // Gắn ResizeObserver để tự động map.invalidateSize() bất cứ khi nào layout thay đổi
+    let resizeObserver = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        try {
+          map.invalidateSize();
+        } catch {}
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
+    const t1 = setTimeout(() => map.invalidateSize(), 60);
+    const t2 = setTimeout(() => map.invalidateSize(), 250);
+    const t3 = setTimeout(() => map.invalidateSize(), 600);
 
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
+      if (resizeObserver) resizeObserver.disconnect();
       try {
         map.remove();
       } catch {}
@@ -176,6 +168,8 @@ export default function TabLocation() {
       polylineGlowRef.current = null;
       distanceBadgeMarkerRef.current = null;
       placesLayerRef.current = null;
+      partnerTrailLayerRef.current = null;
+      trailStartMarkerRef.current = null;
       hasFittedBothRef.current = false;
       hasFittedMyLocRef.current = false;
       setMapReady(false);
@@ -187,18 +181,30 @@ export default function TabLocation() {
     if (!mapInstanceRef.current || !mapInstanceRef.current._tileLayer) return;
     mapInstanceRef.current.removeLayer(mapInstanceRef.current._tileLayer);
 
-    const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-    const newTiles = L.tileLayer(tileUrl, {
-      maxZoom: 19,
-      subdomains: 'abc',
-      className: mapStyle === 'dark' ? 'romantic-dark-tiles' : ''
+    const activeConfig = TILE_PROVIDERS[mapStyle] || TILE_PROVIDERS.hybrid;
+    const newTiles = L.tileLayer(activeConfig.url, {
+      maxZoom: activeConfig.maxZoom,
+      subdomains: activeConfig.subdomains,
+      className: activeConfig.className || ''
     }).addTo(mapInstanceRef.current);
 
     mapInstanceRef.current._tileLayer = newTiles;
   }, [mapStyle]);
 
-  // Helper hàm di chuyển tâm bản đồ tính đến Bottom Sheet (dịch tâm xuống để Marker hiện ở phần trên thoáng)
-  const flyToOffset = (map, lat, lng, zoom = 16, offsetY = 90) => {
+  const cycleMapStyle = () => {
+    setMapStyle(prev => {
+      let next = 'hybrid';
+      if (prev === 'hybrid') next = 'dark';
+      else if (prev === 'dark') next = 'roadmap';
+      else next = 'hybrid';
+      const provider = TILE_PROVIDERS[next];
+      showToast(`Đã chuyển sang ${provider.name}`, 'info');
+      return next;
+    });
+  };
+
+  // Helper hàm di chuyển tâm camera tính đến Bottom Sheet
+  const flyToOffset = (map, lat, lng, zoom = 16, offsetY = 80) => {
     if (!map || !lat || !lng) return;
     try {
       const targetPoint = map.project([lat, lng], zoom);
@@ -210,7 +216,51 @@ export default function TabLocation() {
     }
   };
 
-  // ─── TỰ ĐỘNG CĂN CHỈNH CAMERA ĐỂ CẢ 2 NGƯỜI LUÔN XUẤT HIỆN RÕ RÀNG TRÊN MÀN HÌNH ───
+  // ─── SMART CAMERA ACTIONS ───
+  const fitBothInView = () => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    const hasMyLoc = myLocation?.latitude && myLocation?.longitude;
+    const hasPartnerLoc = partnerLocation?.latitude && partnerLocation?.longitude && partnerLocation?.is_sharing !== false;
+
+    if (hasMyLoc && hasPartnerLoc) {
+      map.fitBounds([
+        [myLocation.latitude, myLocation.longitude],
+        [partnerLocation.latitude, partnerLocation.longitude]
+      ], {
+        paddingTopLeft: [50, 90],
+        paddingBottomRight: [70, 300],
+        maxZoom: 16
+      });
+    } else if (hasMyLoc) {
+      flyToOffset(map, myLocation.latitude, myLocation.longitude, 16, 80);
+    } else if (hasPartnerLoc) {
+      flyToOffset(map, partnerLocation.latitude, partnerLocation.longitude, 16, 80);
+    }
+  };
+
+  const focusPartner = () => {
+    if (mapInstanceRef.current && partnerLocation?.latitude) {
+      flyToOffset(mapInstanceRef.current, partnerLocation.latitude, partnerLocation.longitude, 16, 80);
+      if (partnerMarkerRef.current) {
+        partnerMarkerRef.current.openPopup();
+      }
+    }
+  };
+
+  const focusMe = () => {
+    if (mapInstanceRef.current && myLocation?.latitude) {
+      flyToOffset(mapInstanceRef.current, myLocation.latitude, myLocation.longitude, 16, 80);
+      if (myMarkerRef.current) {
+        myMarkerRef.current.openPopup();
+      }
+    } else {
+      refreshLocation();
+    }
+  };
+
+  // ─── TỰ ĐỘNG CĂN CHỈNH CAMERA BAN ĐẦU ───
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -218,24 +268,21 @@ export default function TabLocation() {
     const hasMyLoc = myLocation?.latitude && myLocation?.longitude;
     const hasPartnerLoc = partnerLocation?.latitude && partnerLocation?.longitude && partnerLocation.is_sharing !== false;
 
-    // Khi có vị trí của CẢ 2 NGƯỜI: lập tức fit cả 2 vào khung hình nhìn thấy được (trên bottom sheet)
     if (hasMyLoc && hasPartnerLoc) {
       if (!hasFittedBothRef.current) {
         map.fitBounds([
           [myLocation.latitude, myLocation.longitude],
           [partnerLocation.latitude, partnerLocation.longitude]
         ], {
-          paddingTopLeft: [50, 90], // tránh header trên cùng
-          paddingBottomRight: [70, 320], // tránh bottom sheet bên dưới
+          paddingTopLeft: [50, 90],
+          paddingBottomRight: [70, 300],
           maxZoom: 16
         });
         hasFittedBothRef.current = true;
       }
     } else if (hasMyLoc && !hasPartnerLoc) {
-      // Khi có vị trí của Tôi (chưa có vị trí đối phương)
-      // Nếu là vị trí GPS thật hoặc chưa từng fit vị trí ban đầu
       if (!hasFittedMyLocRef.current || !myLocation?.is_initial_placeholder) {
-        flyToOffset(map, myLocation.latitude, myLocation.longitude, 16, 90);
+        flyToOffset(map, myLocation.latitude, myLocation.longitude, 16, 80);
         if (!myLocation?.is_initial_placeholder) {
           hasFittedMyLocRef.current = true;
         }
@@ -243,7 +290,7 @@ export default function TabLocation() {
     }
   }, [myLocation, partnerLocation, mapReady]);
 
-  // ─── 2. VẼ / CẬP NHẬT MARKER CỦA TÔI (MY LOCATION) ───
+  // ─── 2. VẼ / CẬP NHẬT MARKER CỦA TÔI (MY LOCATION) VỚI CON TRỎ HƯỚNG DI CHUYỂN ───
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -260,23 +307,33 @@ export default function TabLocation() {
       return;
     }
 
-    const { latitude, longitude, accuracy } = myLocation;
+    const { latitude, longitude, accuracy, heading, speed } = myLocation;
     const myName = user?.display_name || user?.full_name || 'Tôi';
     const avatar = user?.avatar_url;
+    const isMoving = speed && speed > 1;
 
-    // Custom HTML Avatar Marker cho Tôi với viền cyan phát sáng và badge định danh rõ nét
+    // Marker với viền phát sáng cyan và mũi tên chỉ hướng di chuyển thật (Heading Cone)
     const myHtml = `
-      <div class="relative flex items-center justify-center" style="width: 48px; height: 48px;">
+      <div class="relative flex items-center justify-center" style="width: 52px; height: 52px;">
         <!-- Vòng sóng radar lan tỏa phát sáng -->
-        <div class="absolute -inset-2.5 rounded-full bg-sky-400/35 animate-ping opacity-75 pointer-events-none"></div>
-        <div class="relative rounded-full shadow-[0_0_24px_rgba(56,189,248,0.85)] bg-zinc-900 overflow-hidden flex items-center justify-center" style="width: 48px; height: 48px; border: 3px solid #38bdf8;">
+        <div class="absolute -inset-2 rounded-full bg-sky-400/30 ${isMoving ? 'animate-ping' : ''} pointer-events-none"></div>
+
+        <!-- Mũi tên chỉ hướng di chuyển GPS (Google Maps style heading cone) -->
+        ${heading !== null && heading !== undefined ? `
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none" style="transform: rotate(${heading}deg);">
+            <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 12px solid #38bdf8; position: absolute; top: -8px; filter: drop-shadow(0 0 6px #38bdf8);"></div>
+          </div>
+        ` : ''}
+
+        <div class="relative rounded-full shadow-[0_0_24px_rgba(56,189,248,0.85)] bg-zinc-950 overflow-hidden flex items-center justify-center" style="width: 46px; height: 46px; border: 3px solid #38bdf8;">
           ${avatar 
             ? `<img src="${avatar}" style="width: 100%; height: 100%; object-fit: cover;" alt="${myName}" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(myName)}&background=0284c7&color=fff';"/>`
             : `<div class="w-full h-full bg-gradient-to-tr from-sky-500 to-cyan-400 flex items-center justify-center font-black text-white text-base">${myName.charAt(0).toUpperCase()}</div>`
           }
         </div>
+
         <!-- Badge định danh Tôi rõ ràng -->
-        <div class="absolute -bottom-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-lg border border-white/50 flex items-center gap-0.5 whitespace-nowrap pointer-events-none">
+        <div class="absolute -bottom-2 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-lg border border-white/40 flex items-center gap-0.5 whitespace-nowrap pointer-events-none">
           <span>💙</span><span>${myName} (Tôi)</span>
         </div>
       </div>
@@ -285,8 +342,8 @@ export default function TabLocation() {
     const myIcon = L.divIcon({
       className: 'custom-my-location-marker',
       html: myHtml,
-      iconSize: [48, 48],
-      iconAnchor: [24, 24]
+      iconSize: [52, 52],
+      iconAnchor: [26, 26]
     });
 
     if (!myMarkerRef.current || !map.hasLayer(myMarkerRef.current)) {
@@ -299,7 +356,6 @@ export default function TabLocation() {
       myMarkerRef.current.setIcon(myIcon);
     }
 
-    // Popup khi nhấn vào vị trí của Tôi trên bản đồ
     const shortMyAddress = myLocation?.address_name ? myLocation.address_name.split(',').slice(0, 2).join(',') : 'Vị trí hiện tại của bạn';
     const myPopupContent = `
       <div style="font-family: inherit; min-width: 155px; text-align: center; padding: 2px;">
@@ -310,6 +366,7 @@ export default function TabLocation() {
         <div style="font-size: 11px; color: #a1a1aa; line-height: 1.3;">
           ${shortMyAddress}
         </div>
+        ${speed && speed > 1 ? `<div style="margin-top: 4px; font-size: 10px; font-weight: 800; color: #38bdf8;">${formatSpeed(speed)}</div>` : ''}
       </div>
     `;
 
@@ -326,7 +383,6 @@ export default function TabLocation() {
       myMarkerRef.current?.openPopup();
     });
 
-    // Vẽ vòng sai số GPS
     if (accuracy && accuracy < 200) {
       if (!accuracyCircleRef.current || !map.hasLayer(accuracyCircleRef.current)) {
         if (accuracyCircleRef.current) {
@@ -346,7 +402,7 @@ export default function TabLocation() {
     }
   }, [myLocation, user, mapReady]);
 
-  // ─── 3. VẼ / CẬP NHẬT MARKER CỦA NGƯỜI YÊU (PARTNER LOCATION) ───
+  // ─── 3. VẼ / CẬP NHẬT MARKER CỦA NGƯỜI YÊU (PARTNER LOCATION) VỚI SPEED & HEADING ───
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -359,30 +415,42 @@ export default function TabLocation() {
       return;
     }
 
-    const { latitude, longitude, status_message } = partnerLocation;
+    const { latitude, longitude, status_message, speed, heading } = partnerLocation;
     const partnerName = partner?.display_name || partner?.full_name || 'Người yêu';
     const avatar = partner?.avatar_url;
+    const isMoving = speed && speed > 1;
 
-    // Custom HTML Avatar Marker cho người yêu với viền hồng tình yêu và bóng tim
     const partnerHtml = `
-      <div class="relative flex items-center justify-center" style="width: 48px; height: 48px;">
-        <!-- Bong bóng trạng thái nếu người yêu có gửi lời nhắn -->
+      <div class="relative flex items-center justify-center" style="width: 52px; height: 52px;">
+        <!-- Bong bóng lời nhắn nếu có -->
         ${status_message ? `
-          <div class="absolute -top-8 bg-zinc-900/90 backdrop-blur-md border border-rose-500/40 text-rose-200 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap animate-bounce flex items-center gap-1">
+          <div class="absolute -top-8 bg-zinc-950/95 backdrop-blur-md border border-rose-500/50 text-rose-200 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap animate-bounce flex items-center gap-1">
             <span>💬</span><span>${status_message}</span>
           </div>
         ` : ''}
-        <!-- Vòng sóng radar tình yêu -->
-        <div class="absolute -inset-2.5 rounded-full bg-rose-500/25 animate-ping opacity-60 pointer-events-none"></div>
-        <div class="relative rounded-full shadow-[0_0_24px_rgba(244,63,94,0.7)] bg-zinc-900 overflow-hidden flex items-center justify-center" style="width: 48px; height: 48px; border: 3px solid #f43f5e;">
+
+        <!-- Radar phát sáng hồng -->
+        <div class="absolute -inset-2.5 rounded-full bg-rose-500/30 ${isMoving ? 'animate-ping' : ''} pointer-events-none"></div>
+
+        <!-- Mũi tên chỉ hướng di chuyển GPS của người yêu -->
+        ${heading !== null && heading !== undefined ? `
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none" style="transform: rotate(${heading}deg);">
+            <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 12px solid #f43f5e; position: absolute; top: -8px; filter: drop-shadow(0 0 6px #f43f5e);"></div>
+          </div>
+        ` : ''}
+
+        <div class="relative rounded-full shadow-[0_0_24px_rgba(244,63,94,0.8)] bg-zinc-950 overflow-hidden flex items-center justify-center" style="width: 46px; height: 46px; border: 3px solid #f43f5e;">
           ${avatar 
             ? `<img src="${avatar}" style="width: 100%; height: 100%; object-fit: cover;" alt="${partnerName}" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(partnerName)}&background=f43f5e&color=fff';"/>`
             : `<div class="w-full h-full bg-gradient-to-tr from-rose-500 to-pink-400 flex items-center justify-center font-black text-white text-base">${partnerName.charAt(0).toUpperCase()}</div>`
           }
         </div>
-        <!-- Badge định danh Người yêu -->
-        <div class="absolute -bottom-2.5 bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-md border border-white/40 flex items-center gap-0.5 whitespace-nowrap pointer-events-none">
-          <span>❤️</span><span>${partnerName}</span>
+
+        <!-- Badge định danh & Tốc độ khi đang di chuyển -->
+        <div class="absolute -bottom-2 bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-md border border-white/40 flex items-center gap-1 whitespace-nowrap pointer-events-none">
+          <span>❤️</span>
+          <span>${partnerName}</span>
+          ${isMoving ? `<span class="bg-black/30 px-1 rounded text-[8px] font-bold">${formatSpeed(speed).replace('Đang trên xe (~', '').replace(')', '')}</span>` : ''}
         </div>
       </div>
     `;
@@ -390,8 +458,8 @@ export default function TabLocation() {
     const partnerIcon = L.divIcon({
       className: 'custom-partner-location-marker',
       html: partnerHtml,
-      iconSize: [48, 48],
-      iconAnchor: [24, 24]
+      iconSize: [52, 52],
+      iconAnchor: [26, 26]
     });
 
     if (!partnerMarkerRef.current || !map.hasLayer(partnerMarkerRef.current)) {
@@ -404,18 +472,18 @@ export default function TabLocation() {
       partnerMarkerRef.current.setIcon(partnerIcon);
     }
 
-    // Popup thông tin & nút Chỉ đường Google Maps khi nhấn vào đối phương trên bản đồ
     const directionsUrl = getGoogleMapsDirectionsUrl(latitude, longitude);
     const shortPartnerAddress = partnerLocation?.address_name ? partnerLocation.address_name.split(',').slice(0, 2).join(',') : 'Vị trí hiện tại';
     const partnerPopupContent = `
-      <div style="font-family: inherit; min-width: 175px; text-align: center; padding: 2px;">
+      <div style="font-family: inherit; min-width: 180px; text-align: center; padding: 2px;">
         <div style="display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 800; font-size: 13px; color: #f43f5e; margin-bottom: 2px;">
           <span>❤️</span>
           <span>${partnerName}</span>
         </div>
-        <div style="font-size: 11px; color: #a1a1aa; margin-bottom: 8px; line-height: 1.3;">
+        <div style="font-size: 11px; color: #a1a1aa; margin-bottom: 6px; line-height: 1.3;">
           ${shortPartnerAddress}
         </div>
+        ${speed && speed > 1 ? `<div style="font-size: 11px; font-weight: 800; color: #fb7185; margin-bottom: 6px;">${formatSpeed(speed)}</div>` : ''}
         <a href="${directionsUrl}" target="_blank" rel="noopener noreferrer" style="
           display: inline-flex;
           align-items: center;
@@ -451,7 +519,77 @@ export default function TabLocation() {
     });
   }, [partnerLocation, partner, mapReady]);
 
-  // ─── 4. ĐƯỜNG KẾT NỐI TÌNH YÊU & HUY HIỆU KHOẢNG CÁCH (POLYLINE & BADGE) ───
+  // ─── 4. VẼ LỘ TRÌNH DI CHUYỂN TRỰC TIẾP (BREADCRUMB ROUTE TRAIL - NHƯ MESSENGER) ───
+  useEffect(() => {
+    const trailLayer = partnerTrailLayerRef.current;
+    if (!trailLayer) return;
+
+    trailLayer.clearLayers();
+
+    if (!showRouteTrail) return;
+
+    // 1. Vẽ lộ trình của người yêu (Partner Trail)
+    if (partnerTrail && partnerTrail.length >= 2) {
+      const latlngs = partnerTrail.map(p => [p.lat, p.lng]);
+
+      // Hào quang phát sáng bên ngoài
+      L.polyline(latlngs, {
+        color: '#f43f5e',
+        weight: 8,
+        opacity: 0.35,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(trailLayer);
+
+      // Đường chính sắc nét
+      L.polyline(latlngs, {
+        color: '#fda4af',
+        weight: 4,
+        opacity: 0.95,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(trailLayer);
+
+      // Điểm bắt đầu xuất phát (Start Pin 🟢)
+      const startPoint = partnerTrail[0];
+      const startHtml = `
+        <div class="flex items-center justify-center" style="width: 24px; height: 24px;">
+          <div class="w-5 h-5 rounded-full bg-emerald-500 border-2 border-white shadow-lg flex items-center justify-center text-[10px] text-white font-black">
+            A
+          </div>
+        </div>
+      `;
+      const startIcon = L.divIcon({
+        className: 'custom-trail-start-marker',
+        html: startHtml,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      });
+
+      const startMarker = L.marker([startPoint.lat, startPoint.lng], { icon: startIcon }).addTo(trailLayer);
+      startMarker.bindPopup(`
+        <div style="font-size: 11px; text-align: center; color: #fff; padding: 2px;">
+          <strong style="color: #34d399;">Điểm xuất phát</strong><br/>
+          <span style="color: #a1a1aa; font-size: 10px;">${formatTimeAgo(startPoint.timestamp)}</span>
+        </div>
+      `, { className: 'custom-romantic-popup', offset: [0, -12], closeButton: false });
+    }
+
+    // 2. Vẽ lộ trình của chính tôi (My Trail) bằng vệt xanh cyan
+    if (myTrail && myTrail.length >= 2) {
+      const myLatlngs = myTrail.map(p => [p.lat, p.lng]);
+      L.polyline(myLatlngs, {
+        color: '#38bdf8',
+        weight: 3.5,
+        opacity: 0.75,
+        dashArray: '6, 6',
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(trailLayer);
+    }
+  }, [partnerTrail, myTrail, showRouteTrail, mapReady]);
+
+  // ─── 5. ĐƯỜNG KẾT NỐI TÌNH YÊU & HUY HIỆU KHOẢNG CÁCH GIỮA 2 NGƯỜI ───
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -465,30 +603,28 @@ export default function TabLocation() {
         [partnerLocation.latitude, partnerLocation.longitude]
       ];
 
-      // 1. Đường hào quang phát sáng bên ngoài (Outer Glow Line)
       if (!polylineGlowRef.current || !map.hasLayer(polylineGlowRef.current)) {
         if (polylineGlowRef.current) {
           try { map.removeLayer(polylineGlowRef.current); } catch {}
         }
         polylineGlowRef.current = L.polyline(latlngs, {
           color: '#f43f5e',
-          weight: 8,
-          opacity: 0.35,
+          weight: 7,
+          opacity: 0.3,
           lineCap: 'round'
         }).addTo(map);
       } else {
         polylineGlowRef.current.setLatLngs(latlngs);
       }
 
-      // 2. Đường kẻ đứt tình yêu sắc nét bên trong (Inner Dashed Romantic Line)
       if (!polylineRef.current || !map.hasLayer(polylineRef.current)) {
         if (polylineRef.current) {
           try { map.removeLayer(polylineRef.current); } catch {}
         }
         polylineRef.current = L.polyline(latlngs, {
           color: '#fda4af',
-          weight: 3.5,
-          opacity: 0.95,
+          weight: 3,
+          opacity: 0.9,
           dashArray: '10, 8',
           lineCap: 'round'
         }).addTo(map);
@@ -496,7 +632,6 @@ export default function TabLocation() {
         polylineRef.current.setLatLngs(latlngs);
       }
 
-      // 3. Tính khoảng cách chính xác & Tọa độ điểm chính giữa (Midpoint)
       const p1 = L.latLng(myLocation.latitude, myLocation.longitude);
       const p2 = L.latLng(partnerLocation.latitude, partnerLocation.longitude);
       const distMeters = distanceBetweenMeters ?? p1.distanceTo(p2);
@@ -504,7 +639,6 @@ export default function TabLocation() {
       const midLat = (myLocation.latitude + partnerLocation.latitude) / 2;
       const midLng = (myLocation.longitude + partnerLocation.longitude) / 2;
 
-      // 4. Huy hiệu khoảng cách nổi bật ở chính giữa đường nối (Middle Distance Badge)
       const badgeHtml = `
         <div class="couple-bridge-label-wrap pointer-events-auto cursor-pointer" style="display: flex; align-items: center; justify-content: center;">
           <div class="couple-bridge-label px-3 py-1.5 rounded-full bg-zinc-950/95 backdrop-blur-md border border-rose-500/70 shadow-[0_4px_25px_rgba(244,63,94,0.6)] text-white text-[11px] font-black flex items-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:scale-105">
@@ -556,7 +690,7 @@ export default function TabLocation() {
     }
   }, [myLocation, partnerLocation, distanceBetweenMeters, mapReady]);
 
-  // ─── 5. HIỂN THỊ ĐỊA ĐIỂM ĐÃ LƯU (SAVED PLACES) ───
+  // ─── 6. HIỂN THỊ ĐỊA ĐIỂM ĐÃ LƯU (SAVED PLACES) ───
   useEffect(() => {
     const placesLayer = placesLayerRef.current;
     if (!placesLayer) return;
@@ -623,68 +757,6 @@ export default function TabLocation() {
     });
   }, [savedPlaces]);
 
-  // ─── SMART CAMERA ACTIONS ───
-  const fitBothInView = () => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    const hasMyLoc = myLocation?.latitude && myLocation?.longitude;
-    const hasPartnerLoc = partnerLocation?.latitude && partnerLocation?.longitude && partnerLocation?.is_sharing !== false;
-
-    if (hasMyLoc && hasPartnerLoc) {
-      map.fitBounds([
-        [myLocation.latitude, myLocation.longitude],
-        [partnerLocation.latitude, partnerLocation.longitude]
-      ], {
-        paddingTopLeft: [50, 90],
-        paddingBottomRight: [70, 340],
-        maxZoom: 16
-      });
-    } else if (hasMyLoc) {
-      flyToOffset(map, myLocation.latitude, myLocation.longitude, 16, 90);
-    } else if (hasPartnerLoc) {
-      flyToOffset(map, partnerLocation.latitude, partnerLocation.longitude, 16, 90);
-    }
-  };
-
-  const focusPartner = () => {
-    if (mapInstanceRef.current && partnerLocation?.latitude) {
-      flyToOffset(mapInstanceRef.current, partnerLocation.latitude, partnerLocation.longitude, 16, 90);
-      if (partnerMarkerRef.current) {
-        partnerMarkerRef.current.openPopup();
-      }
-    }
-  };
-
-  const focusMe = () => {
-    if (mapInstanceRef.current && myLocation?.latitude) {
-      flyToOffset(mapInstanceRef.current, myLocation.latitude, myLocation.longitude, 16, 90);
-      if (myMarkerRef.current) {
-        myMarkerRef.current.openPopup();
-      }
-    } else {
-      refreshLocation();
-    }
-  };
-
-  // Đưa góc xoay bản đồ về lại hướng Bắc (0 độ - Chuẩn Google Maps)
-  const resetNorth = () => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-    if (map.setBearing) {
-      map.setBearing(0);
-      setMapBearing(0);
-      showToast('Đã xoay bản đồ về hướng Bắc 🧭', 'info');
-    }
-  };
-
-  // Thêm địa điểm hiện tại làm địa điểm yêu thích
-  const handleSaveCurrentLocation = () => {
-    if (!myLocation?.latitude) return;
-    setNewPlaceName(myLocation.address_name?.split(',')[0] || 'Địa điểm yêu thích');
-    setShowPlacesModal(true);
-  };
-
   const handleConfirmAddPlace = () => {
     if (!newPlaceName.trim() || !myLocation) return;
     addSavedPlace(newPlaceName, newPlaceCategory, myLocation.latitude, myLocation.longitude);
@@ -695,79 +767,80 @@ export default function TabLocation() {
   const partnerName = partner?.display_name || partner?.full_name || 'Người yêu';
 
   return (
-    <div className="fixed inset-0 w-full h-[100dvh] overflow-hidden select-none z-0">
+    <div className="fixed inset-0 w-full h-[100dvh] overflow-hidden select-none z-0 bg-zinc-950">
       
-      {/* ─── 1. BẢN ĐỒ TOÀN MÀN HÌNH (LEAFLET MAP CONTAINER CHIẾM 100% BACKGROUND) ─── */}
+      {/* ─── 1. BẢN ĐỒ TOÀN MÀN HÌNH (LEAFLET MAP CONTAINER NỀN ĐEN 100%) ─── */}
       <div 
         ref={mapContainerRef} 
         className="absolute inset-0 w-full h-full z-0 bg-zinc-950"
       />
 
-      {/* ─── 2. FLOATING HEADER TRÊN CÙNG: TRẠNG THÁI & CÔNG CỤ (NỔI TRÊN BẢN ĐỒ) ─── */}
-      <div className="absolute top-0 left-0 right-0 z-20 px-3 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pointer-events-none flex items-center justify-between gap-2 max-w-md mx-auto">
-        {/* Badge Tên Tab & Trạng thái Live */}
-        <div className="glass-panel px-3 py-2 rounded-2xl border border-white/15 shadow-xl backdrop-blur-xl pointer-events-auto flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center text-white shadow-sm shadow-rose-500/30 flex-shrink-0">
-            <Navigation size={16} className="fill-current rotate-45" />
+      {/* ─── 2. FLOATING TOP HEADER ─── */}
+      <div className="absolute top-0 left-0 right-0 z-20 px-3 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pointer-events-none flex flex-col gap-2 max-w-md mx-auto">
+        <div className="flex items-center justify-between gap-2 w-full">
+          {/* Badge Tên Tab & Trạng thái Live */}
+          <div className="glass-panel px-3 py-2 rounded-2xl border border-white/15 shadow-xl backdrop-blur-xl pointer-events-auto flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center text-white shadow-sm shadow-rose-500/30 flex-shrink-0">
+              <Navigation size={16} className="fill-current rotate-45" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-xs font-black text-white flex items-center gap-1.5 truncate">
+                <span>Couple Live Map</span>
+                <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                  isRealtimeConnected ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isRealtimeConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+                  {isRealtimeConnected ? 'LIVE' : 'Đang kết nối'}
+                </span>
+              </h2>
+              <p className="text-[10px] text-zinc-400 font-medium truncate">
+                {partnerLocation?.is_sharing !== false ? `Đồng bộ với ${partnerName}` : 'Người yêu chưa bật chia sẻ'}
+              </p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <h2 className="text-xs font-black text-white flex items-center gap-1.5 truncate">
-              <span>Couple Live Map</span>
-              <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
-                isRealtimeConnected ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${isRealtimeConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-                {isRealtimeConnected ? 'LIVE' : 'Đang kết nối'}
-              </span>
-            </h2>
-            <p className="text-[10px] text-zinc-400 font-medium truncate">
-              {partnerLocation?.is_sharing !== false ? `Đồng bộ với ${partnerName}` : 'Người yêu chưa bật chia sẻ'}
-            </p>
-          </div>
-        </div>
 
-        {/* Nút cài đặt chia sẻ, địa điểm & đổi kiểu bản đồ */}
-        <div className="flex items-center gap-1.5 pointer-events-auto">
-          {/* Nút Chuyển đổi bản đồ Dark / Light */}
-          <button
-            type="button"
-            onClick={() => setMapStyle(prev => prev === 'dark' ? 'light' : 'dark')}
-            className="p-2.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 shadow-lg backdrop-blur-md active:scale-95 transition-all flex items-center justify-center"
-            title="Đổi kiểu bản đồ"
-          >
-            <Layers size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowPlacesModal(true)}
-            className="p-2.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 shadow-lg backdrop-blur-md active:scale-95 transition-all"
-            title="Địa điểm yêu thích"
-          >
-            <MapPin size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowSettingsModal(true)}
-            className="p-2.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 shadow-lg backdrop-blur-md active:scale-95 transition-all"
-            title="Quyền riêng tư & Cài đặt"
-          >
-            <Shield size={16} className={isSharingEnabled ? 'text-sky-400' : 'text-zinc-500'} />
-          </button>
+          {/* Công cụ trên Header */}
+          <div className="flex items-center gap-1.5 pointer-events-auto">
+            <button
+              type="button"
+              onClick={cycleMapStyle}
+              className="p-2.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 shadow-lg backdrop-blur-md active:scale-95 transition-all flex items-center justify-center"
+              title={`Đổi kiểu bản đồ: ${TILE_PROVIDERS[mapStyle]?.name}`}
+            >
+              <Layers size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPlacesModal(true)}
+              className="p-2.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 shadow-lg backdrop-blur-md active:scale-95 transition-all"
+              title="Địa điểm yêu thích"
+            >
+              <MapPin size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSettingsModal(true)}
+              className="p-2.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 shadow-lg backdrop-blur-md active:scale-95 transition-all"
+              title="Quyền riêng tư & Cài đặt"
+            >
+              <Shield size={16} className={isSharingEnabled ? 'text-sky-400' : 'text-zinc-500'} />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ─── 3. BÁO LỖI GPS HOẶC CHƯA CẤP QUYỀN (NẾU CÓ) ─── */}
+      {/* ─── 3. BÁO LỖI GPS (NẾU CÓ) ─── */}
       {gpsStatus === 'denied' && (
         <div className="absolute top-20 left-3 right-3 z-30 max-w-md mx-auto p-3.5 bg-amber-500/25 border border-amber-500/40 rounded-2xl flex flex-col gap-2 text-xs text-amber-200 backdrop-blur-xl shadow-2xl animate-fade-in pointer-events-auto">
           <div className="flex items-start justify-between gap-2.5">
             <div className="flex items-start gap-2.5">
               <AlertTriangle size={18} className="text-amber-400 flex-shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold text-amber-300 block mb-0.5">Quyền vị trí đang bị chặn hoặc vướng lớp phủ:</span>
+                <span className="font-bold text-amber-300 block mb-0.5">Quyền vị trí đang bị chặn:</span>
                 <p className="text-[11px] text-amber-100/90 leading-relaxed">
-                  • <strong>Gạt tắt bong bóng chat</strong> (Messenger, Zalo...) nếu Android báo lỗi lớp phủ.
+                  • Gạt tắt bong bóng chat Messenger nếu Android báo lỗi lớp phủ.
                   <br />
-                  • Hoặc bấm vào biểu tượng <strong>ổ khóa 🔒 trên thanh địa chỉ Chrome</strong> &gt; chọn <strong>Vị trí (Cho phép)</strong>.
+                  • Hoặc bấm vào biểu tượng <strong>ổ khóa 🔒 trên thanh địa chỉ</strong> &gt; chọn <strong>Vị trí (Cho phép)</strong>.
                 </p>
               </div>
             </div>
@@ -782,26 +855,8 @@ export default function TabLocation() {
         </div>
       )}
 
-      {/* ─── 4. CÁC NÚT ĐIỀU KHIỂN CAMERA NỔI (MAP FAB CONTROLS BÊN PHẢI) ─── */}
+      {/* ─── 4. CÁC NÚT ĐIỀU KHIỂN NỔI BÊN PHẢI (FAB DOCK) ─── */}
       <div className="absolute right-3 top-[calc(max(0.75rem,env(safe-area-inset-top,0.75rem))+56px)] z-20 flex flex-col gap-2 pointer-events-auto">
-        {/* Nút La bàn Google Maps (Xoay theo góc xoay bản đồ, bấm vào để trả về hướng Bắc 0°) */}
-        {Math.abs(mapBearing) > 2 && (
-          <button
-            type="button"
-            onClick={resetNorth}
-            className="p-2.5 rounded-2xl bg-zinc-900/95 hover:bg-zinc-800 text-rose-400 border border-rose-500/60 shadow-[0_4px_20px_rgba(244,63,94,0.4)] backdrop-blur-md active:scale-90 transition-all flex items-center justify-center animate-fade-in group"
-            title={`Bản đồ đang xoay ${mapBearing}° - Bấm để quay về hướng Bắc`}
-          >
-            <div 
-              className="relative flex items-center justify-center transition-transform duration-150"
-              style={{ transform: `rotate(${-mapBearing}deg)` }}
-            >
-              <Compass size={19} className="text-rose-400 group-hover:scale-110 transition-transform" />
-              <span className="absolute -top-1.5 text-[8px] font-black text-rose-300">N</span>
-            </div>
-          </button>
-        )}
-
         {/* Nút Đưa cả 2 vào khung hình */}
         <button
           type="button"
@@ -834,25 +889,29 @@ export default function TabLocation() {
           <Navigation size={18} className="group-hover:scale-110 transition-transform" />
         </button>
 
-        {/* Nút Giữ sáng màn hình khi di chuyển (Wake Lock) */}
+        {/* Nút Bật/Tắt Lộ trình di chuyển (Route Trail) */}
         <button
           type="button"
-          onClick={toggleWakeLock}
+          onClick={() => {
+            const next = !showRouteTrail;
+            setShowRouteTrail(next);
+            showToast(next ? 'Đang hiển thị lộ trình di chuyển 🗺️' : 'Đã ẩn lộ trình', 'info');
+          }}
           className={`p-2.5 rounded-2xl shadow-xl backdrop-blur-md active:scale-90 transition-all flex items-center justify-center border ${
-            wakeLockActive 
-              ? 'bg-amber-500/20 text-amber-300 border-amber-400/50 shadow-amber-500/20' 
+            showRouteTrail 
+              ? 'bg-rose-500/25 text-rose-300 border-rose-500/50 shadow-rose-500/20' 
               : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-400 border-white/10'
           }`}
-          title={wakeLockActive ? 'Đang giữ sáng màn hình khi di chuyển' : 'Bật giữ sáng màn hình khi đi đường'}
+          title={showRouteTrail ? 'Đang bật vệt đường lộ trình di chuyển' : 'Bật hiển thị vệt đường đã đi'}
         >
-          <Sun size={18} className={wakeLockActive ? 'animate-spin-slow text-amber-300' : ''} />
+          <Route size={18} />
         </button>
       </div>
 
-      {/* ─── 5. BOTTOM SHEET NỔI: THÔNG TIN CỦA ĐỐI PHƯƠNG & CHỈ ĐƯỜNG GOOGLE MAPS (NẰM TRÊN BOTTOM NAV) ─── */}
+      {/* ─── 5. BOTTOM SHEET NỔI: THÔNG TIN CHI TIẾT & CHỈ ĐƯỜNG ─── */}
       <div className="absolute left-0 right-0 z-20 px-3 pointer-events-none max-w-md mx-auto bottom-[calc(76px+env(safe-area-inset-bottom,0px))]">
         {sheetCollapsed ? (
-          /* Trạng thái thu gọn: Chip nổi thanh mảnh, giải phóng 90% không gian bản đồ */
+          /* Trạng thái thu gọn */
           <div 
             onClick={() => setSheetCollapsed(false)}
             className="glass-panel p-2.5 rounded-[24px] border border-white/20 shadow-[0_12px_36px_rgba(0,0,0,0.7)] backdrop-blur-2xl pointer-events-auto flex items-center justify-between gap-2.5 cursor-pointer hover:border-rose-500/40 transition-all active:scale-98"
@@ -872,7 +931,9 @@ export default function TabLocation() {
               </div>
               <div className="min-w-0">
                 <span className="text-xs font-black text-white truncate block">{partnerName}</span>
-                <span className="text-[10px] text-zinc-400 font-medium">Chạm để xem chi tiết</span>
+                <span className="text-[10px] text-zinc-400 font-medium">
+                  {partnerLocation?.speed && partnerLocation.speed > 1 ? formatSpeed(partnerLocation.speed) : 'Chạm để xem chi tiết'}
+                </span>
               </div>
             </div>
 
@@ -907,7 +968,7 @@ export default function TabLocation() {
           /* Trạng thái mở rộng đầy đủ */
           <div className="glass-panel p-3.5 sm:p-4 rounded-[28px] border border-white/20 shadow-[0_16px_45px_rgba(0,0,0,0.75)] backdrop-blur-2xl pointer-events-auto space-y-2.5 transition-all duration-300 max-h-[48vh] overflow-y-auto no-scrollbar">
             
-            {/* Thanh kéo thu gọn/mở rộng */}
+            {/* Thanh gạt thu gọn */}
             <div 
               onClick={() => setSheetCollapsed(true)}
               className="flex items-center justify-center py-0.5 -mt-1 cursor-pointer group"
@@ -916,8 +977,8 @@ export default function TabLocation() {
               <div className="w-10 h-1 bg-zinc-600/70 group-hover:bg-zinc-400 rounded-full transition-colors"></div>
             </div>
 
-            {/* Card Thông tin Người yêu */}
-            <div className="flex items-center justify-between gap-3">
+            {/* Header: Thông tin đối phương & Khoảng cách */}
+            <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-3 min-w-0">
                 <div 
                   className="relative flex-shrink-0 cursor-pointer"
@@ -939,16 +1000,15 @@ export default function TabLocation() {
                 </div>
 
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <h3 className="text-sm font-black text-white truncate">{partnerName}</h3>
                     {partnerLocation?.battery_level !== null && partnerLocation?.battery_level !== undefined && (
-                      <span className="flex items-center gap-0.5 text-[10px] font-bold text-zinc-300 bg-white/10 px-1.5 py-0.2 rounded-full border border-white/10">
+                      <span className="flex items-center gap-0.5 text-[10px] font-bold text-zinc-300 bg-white/10 px-1.5 py-0.2 rounded-full border border-white/10 flex-shrink-0">
                         {partnerLocation.is_charging ? <BatteryCharging size={11} className="text-emerald-400" /> : <Battery size={11} />}
                         <span>{partnerLocation.battery_level}%</span>
                       </span>
                     )}
                   </div>
-
                   <p className="text-xs text-sky-300 font-bold flex items-center gap-1 truncate mt-0.5">
                     <MapPin size={12} className="flex-shrink-0 text-rose-400" />
                     <span className="truncate">{partnerLocation?.address_name || 'Đang chờ cập nhật địa chỉ...'}</span>
@@ -956,41 +1016,32 @@ export default function TabLocation() {
                 </div>
               </div>
 
-              {/* Khoảng cách giữa 2 người */}
-              <div className="text-right flex-shrink-0 pl-2">
-                <div className="text-base font-black text-rose-300 leading-tight">
+              {/* Huy hiệu khoảng cách góc phải */}
+              <div className="text-right flex-shrink-0">
+                <span className="inline-block text-xs font-black text-rose-300 bg-rose-500/15 border border-rose-500/30 px-2.5 py-1 rounded-full whitespace-nowrap">
                   {formatDistance(distanceBetweenMeters)}
-                </div>
-                <div className="text-[10px] text-zinc-400 font-medium">
+                </span>
+                <div className="text-[10px] text-zinc-400 font-medium mt-1">
                   {partnerLocation?.recorded_at ? formatTimeAgo(partnerLocation.recorded_at) : 'Chưa có tọa độ'}
                 </div>
               </div>
             </div>
 
-            {/* Nút chỉ đường Google Maps (khi có vị trí người yêu) */}
+            {/* NÚT CHỈ ĐƯỜNG GOOGLE MAPS (Full Width, rõ ràng, không bị xén chữ) */}
             {partnerLocation?.latitude && partnerLocation?.longitude && partnerLocation?.is_sharing !== false ? (
               <div className="pt-0.5">
                 <a
                   href={getGoogleMapsDirectionsUrl(partnerLocation.latitude, partnerLocation.longitude)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group relative w-full py-2.5 px-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 active:scale-[0.98] text-white font-black text-xs shadow-lg shadow-blue-500/30 flex items-center justify-between transition-all no-underline overflow-hidden border border-white/20"
-                  title={`Chỉ đường qua Google Maps đến chỗ ${partnerName}`}
+                  className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 active:scale-[0.98] text-white font-black text-xs shadow-lg shadow-blue-500/30 flex items-center justify-between transition-all no-underline border border-white/20"
                 >
-                  <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-7 h-7 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center flex-shrink-0 shadow-inner">
-                      <Navigation size={14} className="rotate-45 fill-white text-white group-hover:scale-110 transition-transform" />
-                    </div>
-                    <div className="truncate text-left">
-                      <div className="font-black text-xs leading-tight">Chỉ đường qua Google Maps 🚗</div>
-                      <div className="text-[10px] text-blue-100 font-medium truncate mt-0.5">
-                        Dẫn đường trực tiếp đến chỗ {partnerName}
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Navigation size={14} className="rotate-45 fill-white text-white flex-shrink-0" />
+                    <span className="truncate">Chỉ đường qua Google Maps 🚗</span>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0 text-[10px] font-bold text-blue-100 bg-white/15 px-2 py-1 rounded-xl border border-white/15 shadow-sm">
-                    <span>Mở Google Maps</span>
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-blue-100 flex-shrink-0">
+                    <span>Mở app</span>
                     <ExternalLink size={12} />
                   </div>
                 </a>
@@ -1005,7 +1056,7 @@ export default function TabLocation() {
               </div>
             )}
 
-            {/* Thẻ trạng thái di chuyển & GPS */}
+            {/* Thẻ trạng thái di chuyển & Lộ trình */}
             <div className="grid grid-cols-2 gap-2 pt-0.5 text-xs">
               <div className="p-2 rounded-2xl bg-zinc-900/70 border border-white/5 flex flex-col">
                 <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider mb-0.5">Trạng thái</span>
@@ -1017,9 +1068,9 @@ export default function TabLocation() {
               </div>
 
               <div className="p-2 rounded-2xl bg-zinc-900/70 border border-white/5 flex flex-col">
-                <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider mb-0.5">Độ chính xác GPS</span>
-                <span className="font-bold text-zinc-200 truncate text-[11px]">
-                  {partnerLocation?.accuracy ? `Sai số ±${partnerLocation.accuracy}m` : 'Tiêu chuẩn'}
+                <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider mb-0.5">Lộ trình hôm nay</span>
+                <span className="font-bold text-rose-300 truncate text-[11px]">
+                  {partnerTrail && partnerTrail.length >= 2 ? `${partnerTrail.length} điểm đã đi qua 📍` : 'Chưa có vệt đường'}
                 </span>
               </div>
             </div>
@@ -1053,7 +1104,7 @@ export default function TabLocation() {
         )}
       </div>
 
-      {/* ─── 6. MODAL CÀI ĐẶT CHIA SẺ & QUYỀN RIÊNG TƯ ─── */}
+      {/* ─── 6. MODAL CÀI ĐẶT CHIA SẺ & HƯỚNG DẪN CHẠY NGẦM ─── */}
       {showSettingsModal && (
         <div className="fixed inset-0 z-[99999] flex items-end sm:items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fade-in">
           <div className="w-full max-w-sm bg-gradient-to-b from-zinc-900 to-zinc-950 border border-white/15 rounded-t-[32px] sm:rounded-[32px] p-5 shadow-2xl flex flex-col relative text-zinc-100 animate-slide-up">
@@ -1071,8 +1122,8 @@ export default function TabLocation() {
                 <Shield size={20} className="text-white" />
               </div>
               <div>
-                <h3 className="text-base font-black text-white">Quyền Riêng Tư Vị Trí</h3>
-                <p className="text-xs text-zinc-400 font-medium">Bạn có toàn quyền kiểm soát chia sẻ GPS</p>
+                <h3 className="text-base font-black text-white">Quyền Riêng Tư &amp; Chạy Ngầm</h3>
+                <p className="text-xs text-zinc-400 font-medium">Toàn quyền kiểm soát chia sẻ GPS</p>
               </div>
             </div>
 
@@ -1097,50 +1148,35 @@ export default function TabLocation() {
               </button>
             </div>
 
-            {/* Toggle Giữ sáng màn hình khi di chuyển */}
-            <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-white/10 flex items-center justify-between mb-3.5">
-              <div>
-                <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                  <Sun size={14} />
-                  <span>Giữ sáng màn hình khi di chuyển</span>
-                </div>
-                <div className="text-[11px] text-zinc-400 mt-0.5">
-                  Màn hình không tắt, GPS liên tục truyền trực tiếp cho đối phương
+            {/* Trạng thái định vị ngầm tự động */}
+            <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-emerald-500/30 flex items-center gap-3 mb-3.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+                <Radio size={16} className="animate-pulse" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-emerald-300">Định vị ngầm tự động 100%</div>
+                <div className="text-[11px] text-zinc-400 mt-0.5 leading-snug">
+                  Tự động duy trì gửi tọa độ và vệt đường cho đối phương ngay cả khi khóa màn hình hay chuyển app khác (chuẩn như Life360 &amp; Google Maps).
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={toggleWakeLock}
-                className={`relative w-12 h-6 rounded-full transition-colors flex-shrink-0 ${
-                  wakeLockActive ? 'bg-amber-500' : 'bg-zinc-700'
-                }`}
-              >
-                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                  wakeLockActive ? 'translate-x-6' : 'translate-x-0'
-                }`} />
-              </button>
             </div>
 
-            {/* Hướng dẫn khắc phục lỗi lớp phủ & tối ưu chạy ngầm trên điện thoại */}
-            <div className="p-3.5 rounded-2xl bg-zinc-900/90 border border-white/10 text-xs text-zinc-300 space-y-2 mb-4 max-h-[36vh] overflow-y-auto no-scrollbar">
+            {/* Hướng dẫn tối ưu */}
+            <div className="p-3.5 rounded-2xl bg-zinc-900/90 border border-white/10 text-xs text-zinc-300 space-y-2 mb-4 max-h-[30vh] overflow-y-auto no-scrollbar">
               <div className="font-bold flex items-center gap-1.5 text-amber-300 text-xs">
-                <span>⚠️</span>
-                <span>Khắc phục lỗi lớp phủ &amp; Cấp quyền ngầm:</span>
+                <span>💡</span>
+                <span>Tối ưu hoạt động ngầm trên điện thoại:</span>
               </div>
               
               <div className="space-y-1.5 text-[11px] text-zinc-300/95 leading-relaxed">
-                <p className="font-semibold text-white">1. Khi Android báo "Trang web không thể yêu cầu cấp quyền":</p>
+                <p className="font-semibold text-white">1. Cài ứng dụng ra Màn hình chính (PWA):</p>
                 <p className="text-zinc-400 pl-3">
-                  • Hãy <strong>gạt tắt bong bóng chat Messenger hoặc Zalo</strong> trên màn hình rồi bấm "Thử lại".
-                  <br />
-                  • Hoặc bấm vào biểu tượng <strong>ổ khóa 🔒 trên thanh địa chỉ Chrome</strong> &gt; chọn <strong>Quyền &gt; Vị trí &gt; Cho phép</strong>.
+                  • Mở trình duyệt Chrome/Safari &gt; bấm menu 3 chấm ⋮ &gt; chọn <em>"Thêm vào Màn hình chính"</em> (hoặc <em>"Cài đặt ứng dụng"</em>) để ứng dụng có quyền chạy nền độc lập như app cài từ App Store/CH Play.
                 </p>
 
-                <p className="font-semibold text-white pt-1">2. Để app chạy nền tốt nhất khi chuyển app:</p>
+                <p className="font-semibold text-white pt-1">2. Tắt chế độ Tiết kiệm pin cho ứng dụng:</p>
                 <p className="text-zinc-400 pl-3">
-                  • <strong>Cài ra màn hình chính (PWA):</strong> Bấm menu 3 chấm ⋮ trên Chrome &gt; chọn <em>"Thêm vào Màn hình chính"</em> (hoặc <em>"Cài đặt ứng dụng"</em>).
-                  <br />
-                  • <strong>Tắt tiết kiệm pin:</strong> Vào Cài đặt Android &gt; Ứng dụng &gt; Chrome (hoặc Schedule Couple) &gt; Pin &gt; Chọn <strong>"Không hạn chế"</strong> (Unrestricted).
+                  • Vào Cài đặt máy &gt; Ứng dụng &gt; Chrome (hoặc Schedule Couple) &gt; Pin &gt; Chọn <strong>"Không hạn chế"</strong> (Unrestricted) để hệ điều hành không đóng ngầm.
                 </p>
               </div>
             </div>
@@ -1150,7 +1186,7 @@ export default function TabLocation() {
               onClick={() => setShowSettingsModal(false)}
               className="w-full py-3 bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-400 hover:to-cyan-400 text-zinc-950 font-black text-xs rounded-2xl transition-all shadow-lg shadow-sky-500/20 active:scale-98"
             >
-              Đã hiểu & Hoàn tất
+              Đã hiểu &amp; Hoàn tất
             </button>
           </div>
         </div>
@@ -1179,7 +1215,6 @@ export default function TabLocation() {
               </div>
             </div>
 
-            {/* Form thêm địa điểm từ vị trí hiện tại */}
             <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-white/10 space-y-2.5 mb-4">
               <div className="text-xs font-bold text-zinc-300">Ghim vị trí hiện tại:</div>
               <input
@@ -1222,14 +1257,13 @@ export default function TabLocation() {
               </button>
             </div>
 
-            {/* Danh sách địa điểm đã lưu */}
             <div className="flex-1 overflow-y-auto space-y-2 pr-1 -mr-1">
               <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
                 Các địa điểm đã ghim ({savedPlaces.length})
               </div>
               {savedPlaces.length === 0 ? (
                 <div className="py-6 text-center text-xs text-zinc-500">
-                  Chưa có địa điểm nào được lưu. Hãy ghim ngôi nhà hoặc nơi hẹn hò yêu thích nhé!
+                  Chưa có địa điểm nào được lưu.
                 </div>
               ) : (
                 savedPlaces.map(place => (

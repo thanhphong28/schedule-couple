@@ -23,19 +23,60 @@ const addDays = (dateStr, days) => {
 export function useCycle() {
   const { user, partner } = useAuth();
   useApp(); // keep context subscription active
-  const [profile, setProfile] = useState(null);
-  const [analyzedProfile, setAnalyzedProfile] = useState(null);
-  const [cycles, setCycles] = useState([]);
-  const [analyzedCycles, setAnalyzedCycles] = useState(null);
-  const [symptoms, setSymptoms] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [needsAnalysis, setNeedsAnalysis] = useState(false); // Dirty flag: enable button when user edits
-  const [analysisResult, setAnalysisResult] = useState(null); // Last analysis warnings
-  const [lastEpisodeStart, setLastEpisodeStart] = useState(null); // Canonical start of last period episode
 
   const isFemale = user?.gender === 'FEMALE' || user?.gender === 'Nữ' || user?.gender === 'female';
   const isMale = !isFemale;
   const femaleId = isFemale ? user?.id : partner?.id;
+
+  const [profile, setProfile] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`sc_cycle_profile_${femaleId}`) || 'null');
+    } catch {
+      return null;
+    }
+  });
+  const [analyzedProfile, setAnalyzedProfile] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`sc_cycle_profile_${femaleId}`) || 'null');
+    } catch {
+      return null;
+    }
+  });
+  const [cycles, setCycles] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`sc_cycles_${femaleId}`) || '[]');
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+  const [analyzedCycles, setAnalyzedCycles] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`sc_cycles_${femaleId}`) || '[]');
+      return Array.isArray(saved) && saved.length > 0 ? saved : null;
+    } catch {
+      return null;
+    }
+  });
+  const [symptoms, setSymptoms] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`sc_symptoms_${femaleId}`) || '[]');
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`sc_cycles_${femaleId}`);
+      return !cached;
+    } catch {
+      return true;
+    }
+  });
+  const [needsAnalysis, setNeedsAnalysis] = useState(false); // Dirty flag: enable button when user edits
+  const [analysisResult, setAnalysisResult] = useState(null); // Last analysis warnings
+  const [lastEpisodeStart, setLastEpisodeStart] = useState(null); // Canonical start of last period episode
 
   useEffect(() => {
     if (!isSupabaseReady || !femaleId) {
@@ -45,46 +86,71 @@ export function useCycle() {
 
     const fetchData = async () => {
       try {
-        // 1. Profile
-        let { data: hp } = await supabase.from('health_profiles').select('*').eq('user_id', femaleId).maybeSingle();
-        if (!hp && isFemale) {
-          try {
-            const { data: newHp } = await supabase.from('health_profiles').insert([{ user_id: femaleId }]).select().maybeSingle();
-            hp = newHp;
-          } catch (e) {}
-        }
-        setProfile(hp || { average_cycle_length: 28, average_period_length: 5 });
-        setAnalyzedProfile(prev => prev === null ? (hp || { average_cycle_length: 28, average_period_length: 5 }) : prev);
-
-        // 2. Cycles (get all to ensure accurate cycle tracking, limit to 24)
-        const { data: cyc } = await supabase.from('menstrual_cycles')
-          .select('*')
-          .eq('user_id', femaleId)
-          .order('start_date', { ascending: false })
-          .limit(24);
-          
-        // Parse excluded_dates from notes
-        const parsedCycles = (cyc || []).map(c => {
-          let parsedNotes = {};
-          try { parsedNotes = JSON.parse(c.notes || '{}'); } catch(e) {}
-          return {
-            ...c,
-            parsedNotes,
-            excluded_dates: parsedNotes.excluded_dates || []
-          };
-        });
-        setCycles(parsedCycles);
-        setAnalyzedCycles(prev => prev === null ? parsedCycles : prev);
-
-        // 3. Symptoms
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const { data: sym } = await supabase.from('symptoms_log')
-          .select('*')
-          .eq('user_id', femaleId)
-          .gte('log_date', thirtyDaysAgo.toISOString().split('T')[0]);
-        setSymptoms(sym || []);
 
+        // Giới hạn thời gian chờ tối đa 3.5s để không bao giờ treo app
+        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 3500));
+
+        const batchPromise = Promise.allSettled([
+          // 0: Profile
+          supabase.from('health_profiles').select('*').eq('user_id', femaleId).maybeSingle(),
+          // 1: Cycles (tối đa 24 chu kỳ)
+          supabase.from('menstrual_cycles')
+            .select('*')
+            .eq('user_id', femaleId)
+            .order('start_date', { ascending: false })
+            .limit(24),
+          // 2: Symptoms 30 ngày gần nhất
+          supabase.from('symptoms_log')
+            .select('*')
+            .eq('user_id', femaleId)
+            .gte('log_date', thirtyDaysAgo.toISOString().split('T')[0])
+        ]);
+
+        const raceResult = await Promise.race([batchPromise, timeoutPromise]);
+        if (raceResult === 'TIMEOUT') {
+          console.warn('Cycle fetch timeout, using cached data');
+          setIsLoading(false);
+          return;
+        }
+
+        const results = raceResult;
+
+        // 0: Profile
+        let hp = (results[0].status === 'fulfilled' && results[0].value?.data) ? results[0].value.data : null;
+        if (!hp && isFemale) {
+          hp = { average_cycle_length: 28, average_period_length: 5 };
+        }
+        if (hp) {
+          setProfile(hp);
+          setAnalyzedProfile(prev => prev === null ? hp : prev);
+          try { localStorage.setItem(`sc_cycle_profile_${femaleId}`, JSON.stringify(hp)); } catch {}
+        }
+
+        // 1: Cycles
+        if (results[1].status === 'fulfilled' && results[1].value?.data) {
+          const cyc = results[1].value.data;
+          const parsedCycles = (cyc || []).map(c => {
+            let parsedNotes = {};
+            try { parsedNotes = JSON.parse(c.notes || '{}'); } catch(e) {}
+            return {
+              ...c,
+              parsedNotes,
+              excluded_dates: parsedNotes.excluded_dates || []
+            };
+          });
+          setCycles(parsedCycles);
+          setAnalyzedCycles(prev => prev === null ? parsedCycles : prev);
+          try { localStorage.setItem(`sc_cycles_${femaleId}`, JSON.stringify(parsedCycles)); } catch {}
+        }
+
+        // 2: Symptoms
+        if (results[2].status === 'fulfilled' && results[2].value?.data) {
+          const symData = results[2].value.data || [];
+          setSymptoms(symData);
+          try { localStorage.setItem(`sc_symptoms_${femaleId}`, JSON.stringify(symData)); } catch {}
+        }
       } catch (err) {
         console.error('Error fetching cycle data:', err);
       } finally {
@@ -94,7 +160,7 @@ export function useCycle() {
 
     fetchData();
 
-    const channel = supabase.channel('health-rt')
+    const channel = supabase.channel(`health-rt-${femaleId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'menstrual_cycles', filter: `user_id=eq.${femaleId}` }, () => {
         supabase.from('menstrual_cycles').select('*').eq('user_id', femaleId).order('start_date', { ascending: false }).limit(24)
           .then(({ data }) => {
@@ -104,11 +170,17 @@ export function useCycle() {
               return { ...c, parsedNotes, excluded_dates: parsedNotes.excluded_dates || [] };
             });
             setCycles(parsedCycles);
+            try { localStorage.setItem(`sc_cycles_${femaleId}`, JSON.stringify(parsedCycles)); } catch {}
           });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'health_profiles', filter: `user_id=eq.${femaleId}` }, () => {
         supabase.from('health_profiles').select('*').eq('user_id', femaleId).maybeSingle()
-          .then(({ data }) => { if (data) setProfile(data); });
+          .then(({ data }) => { 
+            if (data) {
+              setProfile(data);
+              try { localStorage.setItem(`sc_cycle_profile_${femaleId}`, JSON.stringify(data)); } catch {}
+            }
+          });
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'symptoms_log', filter: `user_id=eq.${femaleId}` }, () => {
         const thirtyDaysAgo = new Date();
@@ -122,7 +194,7 @@ export function useCycle() {
         supabase.from('symptoms_log').select('*').eq('user_id', femaleId).gte('log_date', thirtyDaysAgo.toISOString().split('T')[0])
           .then(({ data }) => setSymptoms(data || []));
       })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'symptoms_log' }, (payload) => {
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'symptoms_log', filter: `user_id=eq.${femaleId}` }, (payload) => {
         if (payload.old && payload.old.id) {
           setSymptoms(prev => prev.filter(s => s.id !== payload.old.id));
         }
@@ -130,7 +202,7 @@ export function useCycle() {
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [femaleId, user, partner]);
+  }, [femaleId, isFemale]);
 
   // ==========================================
   // INSIGHT ENGINE (CALENDAR & DASHBOARD)

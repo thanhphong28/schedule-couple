@@ -641,12 +641,18 @@ body {
 }
 
 /* === COUPLE LIVE MAP TILE & POPUP STYLING === */
-.romantic-dark-tiles .leaflet-tile {
-  filter: brightness(0.6) invert(1) contrast(1.5) hue-rotate(200deg) saturate(0.35) brightness(0.85);
+.leaflet-container,
+.leaflet-pane,
+.leaflet-tile-pane {
+  background-color: #09090b !important;
+}
+
+.google-dark-tiles .leaflet-tile {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(1.15) saturate(0.8);
 }
 
 .custom-romantic-popup .leaflet-popup-content-wrapper {
-  background: rgba(18, 18, 24, 0.92) !important;
+  background: rgba(18, 18, 24, 0.94) !important;
   backdrop-filter: blur(16px) saturate(140%) !important;
   -webkit-backdrop-filter: blur(16px) saturate(140%) !important;
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
@@ -656,7 +662,7 @@ body {
   padding: 2px !important;
 }
 .custom-romantic-popup .leaflet-popup-tip {
-  background: rgba(18, 18, 24, 0.92) !important;
+  background: rgba(18, 18, 24, 0.94) !important;
 }
 .custom-romantic-popup .leaflet-popup-content {
   margin: 8px 10px !important;
@@ -667,15 +673,16 @@ body {
 .custom-partner-location-marker,
 .custom-saved-place-pin,
 .custom-couple-distance-badge-icon,
+.custom-trail-start-marker,
 .leaflet-div-icon {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
 }
 
-/* Touch & Gesture Styling for Smooth Google Maps Experience */
+/* Touch & Gesture Styling for Smooth Maps Experience */
 .leaflet-container {
-  touch-action: none !important;
+  touch-action: pan-x pan-y pinch-zoom !important;
   -webkit-touch-callout: none !important;
   user-select: none !important;
   -webkit-user-select: none !important;

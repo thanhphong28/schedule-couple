@@ -18,29 +18,92 @@ export function useHealth() {
   const { user, partner, couple } = useAuth();
   const todayStr = useMemo(() => getTodayDateStr(), []);
 
-  // 1. Hồ sơ sức khỏe (của tôi & của người yêu)
-  const [myProfile, setMyProfile] = useState(null);
-  const [partnerProfile, setPartnerProfile] = useState(null);
+  // 1. Hồ sơ sức khỏe (của tôi & của người yêu) - Khởi tạo tức thì từ LocalStorage
+  const [myProfile, setMyProfile] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`sc_health_profile_${user?.id}`) || 'null');
+    } catch {
+      return null;
+    }
+  });
+  const [partnerProfile, setPartnerProfile] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`sc_health_profile_${partner?.id}`) || 'null');
+    } catch {
+      return null;
+    }
+  });
 
   // 2. Nhật ký nước uống hôm nay
-  const [myWaterLogs, setMyWaterLogs] = useState([]);
-  const [partnerWaterLogs, setPartnerWaterLogs] = useState([]);
+  const [myWaterLogs, setMyWaterLogs] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`sc_water_${user?.id}_${todayStr}`) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [partnerWaterLogs, setPartnerWaterLogs] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`sc_water_${partner?.id}_${todayStr}`) || '[]');
+    } catch {
+      return [];
+    }
+  });
 
   // 3. Lịch sử nước uống 7 ngày gần nhất
-  const [weeklyWaterHistory, setWeeklyWaterHistory] = useState([]);
+  const [weeklyWaterHistory, setWeeklyWaterHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`sc_water_history_${user?.id}`) || '[]');
+    } catch {
+      return [];
+    }
+  });
 
   // 4. Lịch sử cân nặng
-  const [weightLogs, setWeightLogs] = useState([]);
-  const [partnerWeightLogs, setPartnerWeightLogs] = useState([]);
+  const [weightLogs, setWeightLogs] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`sc_weights_${user?.id}`) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [partnerWeightLogs, setPartnerWeightLogs] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`sc_weights_${partner?.id}`) || '[]');
+    } catch {
+      return [];
+    }
+  });
 
   // 5. Hoạt động thể chất & Smartwatch
-  const [myActivity, setMyActivity] = useState(null);
-  const [partnerActivity, setPartnerActivity] = useState(null);
+  const [myActivity, setMyActivity] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`sc_activity_${user?.id}_${todayStr}`) || 'null');
+    } catch {
+      return null;
+    }
+  });
+  const [partnerActivity, setPartnerActivity] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`sc_activity_${partner?.id}_${todayStr}`) || 'null');
+    } catch {
+      return null;
+    }
+  });
 
   // 6. Lời động viên & Nudge từ người yêu
   const [incomingCheers, setIncomingCheers] = useState([]);
 
-  const [isLoading, setIsLoading] = useState(true);
+  // Không bao giờ chặn màn hình nếu đã có dữ liệu cache từ trước
+  const [isLoading, setIsLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`sc_health_profile_${user?.id}`);
+      return !cached;
+    } catch {
+      return true;
+    }
+  });
+
   const [hasCelebratedGoal, setHasCelebratedGoal] = useState(() => {
     return localStorage.getItem(`sc_water_celebrated_${todayStr}`) === 'true';
   });
@@ -60,146 +123,7 @@ export function useHealth() {
   const myProgressPercent = Math.min(100, Math.round((myTodayWater / myWaterGoal) * 100));
   const partnerProgressPercent = Math.min(100, Math.round((partnerTodayWater / partnerWaterGoal) * 100));
 
-  // Tải dữ liệu ban đầu
-  const fetchHealthData = useCallback(async () => {
-    if (!user?.id) {
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      // 1. Tải Profile của tôi
-      if (isSupabaseReady) {
-        const { data: myProf, error: myProfErr } = await supabase
-          .from('health_profiles')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (myProf) {
-          setMyProfile(myProf);
-        } else if (!myProfErr) {
-          // Khởi tạo profile mặc định
-          const newProfile = {
-            user_id: user.id,
-            daily_water_goal: 2000,
-            share_water: true,
-            share_activity: true,
-            activity_level: 'moderate',
-            health_goal: 'maintain'
-          };
-          const { data: created } = await supabase.from('health_profiles').insert([newProfile]).select().single();
-          if (created) setMyProfile(created);
-        }
-
-        // 2. Tải Profile của người yêu (nếu có ghép đôi)
-        if (partner?.id) {
-          const { data: partProf } = await supabase
-            .from('health_profiles')
-            .select('*')
-            .eq('user_id', partner.id)
-            .maybeSingle();
-          if (partProf) setPartnerProfile(partProf);
-        }
-
-        // 3. Tải Water Logs hôm nay của tôi
-        try {
-          const { data: myWLogs } = await supabase
-            .from('water_logs')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('log_date', todayStr)
-            .order('log_time', { ascending: false });
-          if (myWLogs) setMyWaterLogs(myWLogs);
-
-          // 4. Tải Water Logs hôm nay của người yêu (nếu cho phép chia sẻ)
-          if (partner?.id) {
-            const { data: partWLogs } = await supabase
-              .from('water_logs')
-              .select('*')
-              .eq('user_id', partner.id)
-              .eq('log_date', todayStr)
-              .order('log_time', { ascending: false });
-            if (partWLogs) setPartnerWaterLogs(partWLogs);
-          }
-
-          // 5. Tải lịch sử 7 ngày gần nhất của tôi
-          const sevenDaysAgo = new Date();
-          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-          const sevenDaysStr = sevenDaysAgo.toISOString().split('T')[0];
-
-          const { data: weekLogs } = await supabase
-            .from('water_logs')
-            .select('*')
-            .eq('user_id', user.id)
-            .gte('log_date', sevenDaysStr)
-            .order('log_date', { ascending: true });
-          if (weekLogs) setWeeklyWaterHistory(weekLogs);
-
-          // 6. Tải Lịch sử cân nặng
-          const { data: wLogs } = await supabase
-            .from('weight_logs')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('log_date', { ascending: false })
-            .limit(30);
-          if (wLogs) setWeightLogs(wLogs);
-
-          if (partner?.id) {
-            const { data: partWLogs } = await supabase
-              .from('weight_logs')
-              .select('*')
-              .eq('user_id', partner.id)
-              .order('log_date', { ascending: false })
-              .limit(30);
-            if (partWLogs) setPartnerWeightLogs(partWLogs);
-          }
-
-          // 7. Tải hoạt động hôm nay
-          const { data: actLogs } = await supabase
-            .from('activity_logs')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('activity_date', todayStr)
-            .maybeSingle();
-          if (actLogs) setMyActivity(actLogs);
-
-          if (partner?.id) {
-            const { data: partAct } = await supabase
-              .from('activity_logs')
-              .select('*')
-              .eq('user_id', partner.id)
-              .eq('activity_date', todayStr)
-              .maybeSingle();
-            if (partAct) setPartnerActivity(partAct);
-          }
-
-          // 8. Tải lời động viên chưa đọc
-          const { data: cheers } = await supabase
-            .from('couple_cheers')
-            .select('*, sender:sender_id(display_name, full_name, avatar_url)')
-            .eq('receiver_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(10);
-          if (cheers) setIncomingCheers(cheers);
-
-        } catch (tableErr) {
-          // Bảng chưa có trong Supabase, dùng LocalStorage Fallback an toàn
-          console.warn('Sử dụng LocalStorage fallback cho bảng sức khỏe mới:', tableErr);
-          loadLocalHealthData();
-        }
-      } else {
-        loadLocalHealthData();
-      }
-    } catch (err) {
-      console.error('Lỗi fetchHealthData:', err);
-      loadLocalHealthData();
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user?.id, partner?.id, todayStr]);
-
-  // Fallback đọc LocalStorage khi chưa chạy migration hoặc offline
+  // Fallback đọc LocalStorage khi offline hoặc quá thời gian chờ
   const loadLocalHealthData = useCallback(() => {
     try {
       const cachedMyLogs = JSON.parse(localStorage.getItem(`sc_water_${user?.id}_${todayStr}`) || '[]');
@@ -222,6 +146,143 @@ export function useHealth() {
       console.warn('Lỗi đọc local health data:', e);
     }
   }, [user?.id, partner?.id, todayStr]);
+
+  // Tải dữ liệu ban đầu song song (Parallel Promise.allSettled) với Timeout 3.5s an toàn
+  const fetchHealthData = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+
+    if (!isSupabaseReady) {
+      loadLocalHealthData();
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const sevenDaysStr = sevenDaysAgo.toISOString().split('T')[0];
+
+      // Giới hạn thời gian chờ tối đa 3.5s để không bao giờ treo app
+      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 3500));
+
+      const batchPromise = Promise.allSettled([
+        // 0: my profile
+        supabase.from('health_profiles').select('*').eq('user_id', user.id).maybeSingle(),
+        // 1: partner profile
+        partner?.id ? supabase.from('health_profiles').select('*').eq('user_id', partner.id).maybeSingle() : Promise.resolve({ data: null }),
+        // 2: my water logs today
+        supabase.from('water_logs').select('*').eq('user_id', user.id).eq('log_date', todayStr).order('log_time', { ascending: false }),
+        // 3: partner water logs today
+        partner?.id ? supabase.from('water_logs').select('*').eq('user_id', partner.id).eq('log_date', todayStr).order('log_time', { ascending: false }) : Promise.resolve({ data: null }),
+        // 4: weekly water history
+        supabase.from('water_logs').select('*').eq('user_id', user.id).gte('log_date', sevenDaysStr).order('log_date', { ascending: true }),
+        // 5: my weight logs
+        supabase.from('weight_logs').select('*').eq('user_id', user.id).order('log_date', { ascending: false }).limit(30),
+        // 6: partner weight logs
+        partner?.id ? supabase.from('weight_logs').select('*').eq('user_id', partner.id).order('log_date', { ascending: false }).limit(30) : Promise.resolve({ data: null }),
+        // 7: my activity
+        supabase.from('activity_logs').select('*').eq('user_id', user.id).eq('activity_date', todayStr).maybeSingle(),
+        // 8: partner activity
+        partner?.id ? supabase.from('activity_logs').select('*').eq('user_id', partner.id).eq('activity_date', todayStr).maybeSingle() : Promise.resolve({ data: null }),
+        // 9: cheers
+        supabase.from('couple_cheers').select('*').eq('receiver_id', user.id).order('created_at', { ascending: false }).limit(10)
+      ]);
+
+      const raceResult = await Promise.race([batchPromise, timeoutPromise]);
+
+      if (raceResult === 'TIMEOUT') {
+        console.warn('Health batch fetch exceeded 3.5s timeout, using local cache');
+        loadLocalHealthData();
+        return;
+      }
+
+      const results = raceResult;
+
+      // 0: My Profile
+      if (results[0].status === 'fulfilled' && results[0].value?.data) {
+        setMyProfile(results[0].value.data);
+        try { localStorage.setItem(`sc_health_profile_${user.id}`, JSON.stringify(results[0].value.data)); } catch {}
+      } else if (results[0].status === 'fulfilled' && !results[0].value?.error) {
+        // Init default profile in background
+        const defaultProf = {
+          user_id: user.id,
+          daily_water_goal: 2000,
+          share_water: true,
+          share_activity: true,
+          activity_level: 'moderate',
+          health_goal: 'maintain'
+        };
+        setMyProfile(defaultProf);
+        supabase.from('health_profiles').insert([defaultProf]).select().maybeSingle().then(({ data }) => {
+          if (data) {
+            setMyProfile(data);
+            try { localStorage.setItem(`sc_health_profile_${user.id}`, JSON.stringify(data)); } catch {}
+          }
+        }).catch(() => {});
+      }
+
+      // 1: Partner Profile
+      if (results[1].status === 'fulfilled' && results[1].value?.data) {
+        setPartnerProfile(results[1].value.data);
+        try { localStorage.setItem(`sc_health_profile_${partner.id}`, JSON.stringify(results[1].value.data)); } catch {}
+      }
+
+      // 2: My Water Logs Today
+      if (results[2].status === 'fulfilled' && results[2].value?.data) {
+        setMyWaterLogs(results[2].value.data);
+        try { localStorage.setItem(`sc_water_${user.id}_${todayStr}`, JSON.stringify(results[2].value.data)); } catch {}
+      }
+
+      // 3: Partner Water Logs Today
+      if (results[3].status === 'fulfilled' && results[3].value?.data) {
+        setPartnerWaterLogs(results[3].value.data);
+        try { localStorage.setItem(`sc_water_${partner.id}_${todayStr}`, JSON.stringify(results[3].value.data)); } catch {}
+      }
+
+      // 4: Weekly Water History
+      if (results[4].status === 'fulfilled' && results[4].value?.data) {
+        setWeeklyWaterHistory(results[4].value.data);
+        try { localStorage.setItem(`sc_water_history_${user.id}`, JSON.stringify(results[4].value.data)); } catch {}
+      }
+
+      // 5: My Weight Logs
+      if (results[5].status === 'fulfilled' && results[5].value?.data) {
+        setWeightLogs(results[5].value.data);
+        try { localStorage.setItem(`sc_weights_${user.id}`, JSON.stringify(results[5].value.data)); } catch {}
+      }
+
+      // 6: Partner Weight Logs
+      if (results[6].status === 'fulfilled' && results[6].value?.data) {
+        setPartnerWeightLogs(results[6].value.data);
+        try { localStorage.setItem(`sc_weights_${partner.id}`, JSON.stringify(results[6].value.data)); } catch {}
+      }
+
+      // 7: My Activity Today
+      if (results[7].status === 'fulfilled' && results[7].value?.data) {
+        setMyActivity(results[7].value.data);
+        try { localStorage.setItem(`sc_activity_${user.id}_${todayStr}`, JSON.stringify(results[7].value.data)); } catch {}
+      }
+
+      // 8: Partner Activity Today
+      if (results[8].status === 'fulfilled' && results[8].value?.data) {
+        setPartnerActivity(results[8].value.data);
+        try { localStorage.setItem(`sc_activity_${partner.id}_${todayStr}`, JSON.stringify(results[8].value.data)); } catch {}
+      }
+
+      // 9: Cheers
+      if (results[9].status === 'fulfilled' && results[9].value?.data) {
+        setIncomingCheers(results[9].value.data);
+      }
+    } catch (err) {
+      console.warn('Lỗi fetchHealthData, sử dụng cache:', err);
+      loadLocalHealthData();
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.id, partner?.id, todayStr, loadLocalHealthData]);
 
   // Chạy khi mount hoặc đổi user/partner
   useEffect(() => {

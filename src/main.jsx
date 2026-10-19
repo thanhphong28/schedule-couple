@@ -31,6 +31,7 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+import { LocationProvider } from './context/LocationContext.jsx'
 import { ErrorBoundary } from './components/ErrorBoundary.jsx'
 
 createRoot(document.getElementById('root')).render(
@@ -38,7 +39,9 @@ createRoot(document.getElementById('root')).render(
     <ErrorBoundary>
       <AuthProvider>
         <AppProvider>
-          <App />
+          <LocationProvider>
+            <App />
+          </LocationProvider>
         </AppProvider>
       </AuthProvider>
     </ErrorBoundary>

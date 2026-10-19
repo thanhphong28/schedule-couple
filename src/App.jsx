@@ -140,7 +140,7 @@ function InAppNotificationBanner() {
 }
 
 function AppContent() {
-  const { activeTab, wallpaper, WALLPAPERS } = useApp();
+  const { activeTab, setActiveTab, wallpaper, WALLPAPERS } = useApp();
   const currentWp = WALLPAPERS?.find(w => w.id === wallpaper) || WALLPAPERS?.[0];
   const isAurora = !currentWp || currentWp.url === 'aurora';
   const isLocationTab = activeTab === 5;

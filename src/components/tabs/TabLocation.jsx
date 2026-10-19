@@ -1,7 +1,7 @@
 // components/tabs/TabLocation.jsx
 // Tab Vị Trí Cặp Đôi (Couple Live Map)
 // Bản đồ thời gian thực hiển thị vị trí hai người yêu, lộ trình di chuyển trực tiếp (như Messenger), khoảng cách, tốc độ, địa chỉ và chế độ đi đường chạy ngầm
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -10,6 +10,7 @@ import {
   formatDistance, 
   formatSpeed, 
   formatTimeAgo,
+  calculateDistance,
   getGoogleMapsDirectionsUrl
 } from '../../services/geolocationService.js';
 import { 
@@ -74,6 +75,7 @@ export default function TabLocation() {
   const mapInstanceRef = useRef(null);
   const myMarkerRef = useRef(null);
   const partnerMarkerRef = useRef(null);
+  const coupleTogetherMarkerRef = useRef(null);
   const accuracyCircleRef = useRef(null);
   const polylineRef = useRef(null);
   const polylineGlowRef = useRef(null);
@@ -90,6 +92,48 @@ export default function TabLocation() {
   const [newPlaceCategory, setNewPlaceCategory] = useState('home');
   const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+
+  const partnerName = partner?.display_name || partner?.full_name || 'Người yêu';
+  const myName = user?.display_name || user?.full_name || 'Tôi';
+
+  // Khoảng cách thực tế giữa hai người (ưu tiên context, nếu context chưa kịp tính thì tính trực tiếp từ tọa độ)
+  const actualDistanceMeters = useMemo(() => {
+    if (distanceBetweenMeters !== null && distanceBetweenMeters !== undefined) {
+      return distanceBetweenMeters;
+    }
+    if (myLocation?.latitude && partnerLocation?.latitude && partnerLocation?.is_sharing !== false) {
+      return calculateDistance(
+        myLocation.latitude,
+        myLocation.longitude,
+        partnerLocation.latitude,
+        partnerLocation.longitude
+      );
+    }
+    return null;
+  }, [distanceBetweenMeters, myLocation?.latitude, myLocation?.longitude, partnerLocation?.latitude, partnerLocation?.longitude, partnerLocation?.is_sharing]);
+
+  // Tự động nhận diện khi hai bạn đang ở bên cạnh nhau (< 80 mét)
+  const isTogether = actualDistanceMeters !== null && actualDistanceMeters < 80;
+
+  // Khi đang ở cạnh nhau: Tự động dùng chung địa chỉ chính xác nhất đã giải mã
+  const displayAddress = useMemo(() => {
+    const myAddr = myLocation?.address_name;
+    const partnerAddr = partnerLocation?.address_name;
+    const isValid = (addr) => addr && 
+      !addr.startsWith('Đang định vị') && 
+      !addr.startsWith('Đang xác') && 
+      !addr.startsWith('Chưa có') &&
+      !/^\s*\d+\.\d+,\s*\d+\.\d+\s*$/.test(addr);
+
+    if (isTogether) {
+      if (isValid(partnerAddr)) return partnerAddr;
+      if (isValid(myAddr)) return myAddr;
+      if (partnerAddr && !/^\s*\d+\.\d+,\s*\d+\.\d+\s*$/.test(partnerAddr)) return partnerAddr;
+      if (myAddr && !/^\s*\d+\.\d+,\s*\d+\.\d+\s*$/.test(myAddr)) return myAddr;
+      return 'Cùng một địa điểm 💕';
+    }
+    return partnerAddr || 'Đang chờ cập nhật địa chỉ...';
+  }, [isTogether, myLocation?.address_name, partnerLocation?.address_name]);
 
   const hasFittedBothRef = useRef(false);
   const hasFittedMyLocRef = useRef(false);
@@ -167,6 +211,7 @@ export default function TabLocation() {
       polylineRef.current = null;
       polylineGlowRef.current = null;
       distanceBadgeMarkerRef.current = null;
+      coupleTogetherMarkerRef.current = null;
       placesLayerRef.current = null;
       partnerTrailLayerRef.current = null;
       trailStartMarkerRef.current = null;
@@ -225,14 +270,22 @@ export default function TabLocation() {
     const hasPartnerLoc = partnerLocation?.latitude && partnerLocation?.longitude && partnerLocation?.is_sharing !== false;
 
     if (hasMyLoc && hasPartnerLoc) {
-      map.fitBounds([
-        [myLocation.latitude, myLocation.longitude],
-        [partnerLocation.latitude, partnerLocation.longitude]
-      ], {
-        paddingTopLeft: [50, 90],
-        paddingBottomRight: [70, 300],
-        maxZoom: 16
-      });
+      if (isTogether) {
+        const midLat = (myLocation.latitude + partnerLocation.latitude) / 2;
+        const midLng = (myLocation.longitude + partnerLocation.longitude) / 2;
+        flyToOffset(map, midLat, midLng, 17, 80);
+        coupleTogetherMarkerRef.current?.openPopup();
+        showToast('Hai bạn đang ở bên cạnh nhau rất hạnh phúc! 💑💖', 'success');
+      } else {
+        map.fitBounds([
+          [myLocation.latitude, myLocation.longitude],
+          [partnerLocation.latitude, partnerLocation.longitude]
+        ], {
+          paddingTopLeft: [50, 90],
+          paddingBottomRight: [70, 300],
+          maxZoom: 16
+        });
+      }
     } else if (hasMyLoc) {
       flyToOffset(map, myLocation.latitude, myLocation.longitude, 16, 80);
     } else if (hasPartnerLoc) {
@@ -242,18 +295,32 @@ export default function TabLocation() {
 
   const focusPartner = () => {
     if (mapInstanceRef.current && partnerLocation?.latitude) {
-      flyToOffset(mapInstanceRef.current, partnerLocation.latitude, partnerLocation.longitude, 16, 80);
-      if (partnerMarkerRef.current) {
-        partnerMarkerRef.current.openPopup();
+      if (isTogether && myLocation?.latitude) {
+        const midLat = (myLocation.latitude + partnerLocation.latitude) / 2;
+        const midLng = (myLocation.longitude + partnerLocation.longitude) / 2;
+        flyToOffset(mapInstanceRef.current, midLat, midLng, 17, 80);
+        coupleTogetherMarkerRef.current?.openPopup();
+      } else {
+        flyToOffset(mapInstanceRef.current, partnerLocation.latitude, partnerLocation.longitude, 16, 80);
+        if (partnerMarkerRef.current) {
+          partnerMarkerRef.current.openPopup();
+        }
       }
     }
   };
 
   const focusMe = () => {
     if (mapInstanceRef.current && myLocation?.latitude) {
-      flyToOffset(mapInstanceRef.current, myLocation.latitude, myLocation.longitude, 16, 80);
-      if (myMarkerRef.current) {
-        myMarkerRef.current.openPopup();
+      if (isTogether && partnerLocation?.latitude) {
+        const midLat = (myLocation.latitude + partnerLocation.latitude) / 2;
+        const midLng = (myLocation.longitude + partnerLocation.longitude) / 2;
+        flyToOffset(mapInstanceRef.current, midLat, midLng, 17, 80);
+        coupleTogetherMarkerRef.current?.openPopup();
+      } else {
+        flyToOffset(mapInstanceRef.current, myLocation.latitude, myLocation.longitude, 16, 80);
+        if (myMarkerRef.current) {
+          myMarkerRef.current.openPopup();
+        }
       }
     } else {
       refreshLocation();
@@ -270,14 +337,20 @@ export default function TabLocation() {
 
     if (hasMyLoc && hasPartnerLoc) {
       if (!hasFittedBothRef.current) {
-        map.fitBounds([
-          [myLocation.latitude, myLocation.longitude],
-          [partnerLocation.latitude, partnerLocation.longitude]
-        ], {
-          paddingTopLeft: [50, 90],
-          paddingBottomRight: [70, 300],
-          maxZoom: 16
-        });
+        if (isTogether) {
+          const midLat = (myLocation.latitude + partnerLocation.latitude) / 2;
+          const midLng = (myLocation.longitude + partnerLocation.longitude) / 2;
+          flyToOffset(map, midLat, midLng, 17, 80);
+        } else {
+          map.fitBounds([
+            [myLocation.latitude, myLocation.longitude],
+            [partnerLocation.latitude, partnerLocation.longitude]
+          ], {
+            paddingTopLeft: [50, 90],
+            paddingBottomRight: [70, 300],
+            maxZoom: 16
+          });
+        }
         hasFittedBothRef.current = true;
       }
     } else if (hasMyLoc && !hasPartnerLoc) {
@@ -288,14 +361,14 @@ export default function TabLocation() {
         }
       }
     }
-  }, [myLocation, partnerLocation, mapReady]);
+  }, [myLocation, partnerLocation, mapReady, isTogether]);
 
   // ─── 2. VẼ / CẬP NHẬT MARKER CỦA TÔI (MY LOCATION) VỚI CON TRỎ HƯỚNG DI CHUYỂN ───
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    if (!myLocation?.latitude || !myLocation?.longitude) {
+    if (isTogether || !myLocation?.latitude || !myLocation?.longitude) {
       if (myMarkerRef.current) {
         try { map.removeLayer(myMarkerRef.current); } catch {}
         myMarkerRef.current = null;
@@ -308,7 +381,6 @@ export default function TabLocation() {
     }
 
     const { latitude, longitude, accuracy, heading, speed } = myLocation;
-    const myName = user?.display_name || user?.full_name || 'Tôi';
     const avatar = user?.avatar_url;
     const isMoving = speed && speed > 1;
 
@@ -333,7 +405,7 @@ export default function TabLocation() {
         </div>
 
         <!-- Badge định danh Tôi rõ ràng -->
-        <div class="absolute -bottom-2 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-lg border border-white/40 flex items-center gap-0.5 whitespace-nowrap pointer-events-none">
+        <div class="absolute -bottom-2 bg-gradient-to-r from-sky-500 to-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg border border-white/40 flex items-center gap-0.5 whitespace-nowrap pointer-events-none" style="font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
           <span>💙</span><span>${myName} (Tôi)</span>
         </div>
       </div>
@@ -400,14 +472,14 @@ export default function TabLocation() {
         accuracyCircleRef.current.setRadius(accuracy);
       }
     }
-  }, [myLocation, user, mapReady]);
+  }, [myLocation, user, mapReady, isTogether, myName]);
 
   // ─── 3. VẼ / CẬP NHẬT MARKER CỦA NGƯỜI YÊU (PARTNER LOCATION) VỚI SPEED & HEADING ───
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    if (!partnerLocation?.latitude || !partnerLocation?.longitude || partnerLocation.is_sharing === false) {
+    if (isTogether || !partnerLocation?.latitude || !partnerLocation?.longitude || partnerLocation.is_sharing === false) {
       if (partnerMarkerRef.current) {
         try { map.removeLayer(partnerMarkerRef.current); } catch {}
         partnerMarkerRef.current = null;
@@ -416,7 +488,6 @@ export default function TabLocation() {
     }
 
     const { latitude, longitude, status_message, speed, heading } = partnerLocation;
-    const partnerName = partner?.display_name || partner?.full_name || 'Người yêu';
     const avatar = partner?.avatar_url;
     const isMoving = speed && speed > 1;
 
@@ -447,7 +518,7 @@ export default function TabLocation() {
         </div>
 
         <!-- Badge định danh & Tốc độ khi đang di chuyển -->
-        <div class="absolute -bottom-2 bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-md border border-white/40 flex items-center gap-1 whitespace-nowrap pointer-events-none">
+        <div class="absolute -bottom-2 bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md border border-white/40 flex items-center gap-1 whitespace-nowrap pointer-events-none" style="font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
           <span>❤️</span>
           <span>${partnerName}</span>
           ${isMoving ? `<span class="bg-black/30 px-1 rounded text-[8px] font-bold">${formatSpeed(speed).replace('Đang trên xe (~', '').replace(')', '')}</span>` : ''}
@@ -517,7 +588,7 @@ export default function TabLocation() {
       setSheetCollapsed(false);
       partnerMarkerRef.current?.openPopup();
     });
-  }, [partnerLocation, partner, mapReady]);
+  }, [partnerLocation, partner, mapReady, isTogether, partnerName]);
 
   // ─── 4. VẼ LỘ TRÌNH DI CHUYỂN TRỰC TIẾP (BREADCRUMB ROUTE TRAIL - NHƯ MESSENGER) ───
   useEffect(() => {
@@ -598,83 +669,202 @@ export default function TabLocation() {
     const hasPartnerLoc = partnerLocation?.latitude && partnerLocation?.longitude && partnerLocation.is_sharing !== false;
 
     if (hasMyLoc && hasPartnerLoc) {
-      const latlngs = [
-        [myLocation.latitude, myLocation.longitude],
-        [partnerLocation.latitude, partnerLocation.longitude]
-      ];
-
-      if (!polylineGlowRef.current || !map.hasLayer(polylineGlowRef.current)) {
-        if (polylineGlowRef.current) {
-          try { map.removeLayer(polylineGlowRef.current); } catch {}
-        }
-        polylineGlowRef.current = L.polyline(latlngs, {
-          color: '#f43f5e',
-          weight: 7,
-          opacity: 0.3,
-          lineCap: 'round'
-        }).addTo(map);
-      } else {
-        polylineGlowRef.current.setLatLngs(latlngs);
-      }
-
-      if (!polylineRef.current || !map.hasLayer(polylineRef.current)) {
-        if (polylineRef.current) {
-          try { map.removeLayer(polylineRef.current); } catch {}
-        }
-        polylineRef.current = L.polyline(latlngs, {
-          color: '#fda4af',
-          weight: 3,
-          opacity: 0.9,
-          dashArray: '10, 8',
-          lineCap: 'round'
-        }).addTo(map);
-      } else {
-        polylineRef.current.setLatLngs(latlngs);
-      }
-
-      const p1 = L.latLng(myLocation.latitude, myLocation.longitude);
-      const p2 = L.latLng(partnerLocation.latitude, partnerLocation.longitude);
-      const distMeters = distanceBetweenMeters ?? p1.distanceTo(p2);
-      const distFormatted = formatDistance(distMeters);
       const midLat = (myLocation.latitude + partnerLocation.latitude) / 2;
       const midLng = (myLocation.longitude + partnerLocation.longitude) / 2;
+      const distFormatted = formatDistance(actualDistanceMeters);
 
-      const badgeHtml = `
-        <div class="couple-bridge-label-wrap pointer-events-auto cursor-pointer" style="display: flex; align-items: center; justify-content: center;">
-          <div class="couple-bridge-label px-3 py-1.5 rounded-full bg-zinc-950/95 backdrop-blur-md border border-rose-500/70 shadow-[0_4px_25px_rgba(244,63,94,0.6)] text-white text-[11px] font-black flex items-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:scale-105">
-            <span class="animate-pulse">💕</span>
-            <span>Cách nhau <strong style="color: #fb7185; font-size: 12px; margin-left: 2px;">${distFormatted}</strong></span>
-          </div>
-        </div>
-      `;
-
-      const badgeIcon = L.divIcon({
-        className: 'custom-couple-distance-badge-icon',
-        html: badgeHtml,
-        iconSize: [160, 32],
-        iconAnchor: [80, 16]
-      });
-
-      if (!distanceBadgeMarkerRef.current || !map.hasLayer(distanceBadgeMarkerRef.current)) {
+      if (isTogether) {
+        // Khi ở cạnh nhau (< 80m): Ẩn polyline thô và distance badge riêng lẻ
+        if (polylineGlowRef.current) {
+          try { map.removeLayer(polylineGlowRef.current); } catch {}
+          polylineGlowRef.current = null;
+        }
+        if (polylineRef.current) {
+          try { map.removeLayer(polylineRef.current); } catch {}
+          polylineRef.current = null;
+        }
         if (distanceBadgeMarkerRef.current) {
           try { map.removeLayer(distanceBadgeMarkerRef.current); } catch {}
+          distanceBadgeMarkerRef.current = null;
         }
-        distanceBadgeMarkerRef.current = L.marker([midLat, midLng], {
-          icon: badgeIcon,
-          zIndexOffset: 1500
-        }).addTo(map);
+
+        // Tạo / cập nhật Couple Together Marker biểu tượng cặp đôi bên nhau
+        const myAvatar = user?.avatar_url;
+        const partnerAvatar = partner?.avatar_url;
+        const maxSpeed = Math.max(myLocation?.speed || 0, partnerLocation?.speed || 0);
+        const isMovingTogether = maxSpeed > 1;
+
+        const coupleHtml = `
+          <div class="relative flex flex-col items-center justify-center cursor-pointer active:scale-95 transition-all select-none" style="width: 120px; height: 64px;">
+            <!-- Vòng hào quang phát sáng lan tỏa tình yêu -->
+            <div class="absolute -inset-2 rounded-full bg-gradient-to-r from-sky-400/30 via-rose-500/40 to-pink-500/30 blur-md ${isMovingTogether ? 'animate-pulse' : ''} pointer-events-none"></div>
+
+            <!-- Cặp đôi bên nhau: 2 Avatar lồng nhau ngọt ngào -->
+            <div class="relative flex items-center justify-center pointer-events-auto">
+              <!-- Avatar Tôi (Bên Trái - Viền Xanh Cyan) -->
+              <div class="relative rounded-full shadow-[0_0_16px_rgba(56,189,248,0.85)] bg-zinc-950 overflow-hidden flex items-center justify-center -mr-2.5 z-10" style="width: 44px; height: 44px; border: 3px solid #38bdf8;">
+                ${myAvatar 
+                  ? `<img src="${myAvatar}" style="width: 100%; height: 100%; object-fit: cover;" alt="${myName}" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(myName)}&background=0284c7&color=fff';"/>`
+                  : `<div class="w-full h-full bg-gradient-to-tr from-sky-500 to-cyan-400 flex items-center justify-center font-black text-white text-sm">${myName.charAt(0).toUpperCase()}</div>`
+                }
+                <div class="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-sky-500 border border-zinc-950 flex items-center justify-center text-[7px] text-white font-black">💙</div>
+              </div>
+
+              <!-- Trái tim phát sáng ở giữa nối kết 2 người -->
+              <div class="relative z-30 rounded-full bg-gradient-to-tr from-rose-500 to-pink-500 border-2 border-white shadow-xl flex items-center justify-center text-xs animate-bounce pointer-events-none" style="width: 26px; height: 26px;">
+                💖
+              </div>
+
+              <!-- Avatar Người Yêu (Bên Phải - Viền Hồng Rose) -->
+              <div class="relative rounded-full shadow-[0_0_16px_rgba(244,63,94,0.85)] bg-zinc-950 overflow-hidden flex items-center justify-center -ml-2.5 z-20" style="width: 44px; height: 44px; border: 3px solid #f43f5e;">
+                ${partnerAvatar 
+                  ? `<img src="${partnerAvatar}" style="width: 100%; height: 100%; object-fit: cover;" alt="${partnerName}" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(partnerName)}&background=f43f5e&color=fff';"/>`
+                  : `<div class="w-full h-full bg-gradient-to-tr from-rose-500 to-pink-400 flex items-center justify-center font-black text-white text-sm">${partnerName.charAt(0).toUpperCase()}</div>`
+                }
+                <div class="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-rose-500 border border-zinc-950 flex items-center justify-center text-[7px] text-white font-black">❤️</div>
+              </div>
+            </div>
+
+            <!-- Huy hiệu: Đang ở bên cạnh nhau -->
+            <div class="relative -mt-1.5 z-40 bg-gradient-to-r from-rose-600 via-pink-600 to-purple-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-[0_4px_16px_rgba(244,63,94,0.6)] border border-white/50 flex items-center gap-1 whitespace-nowrap" style="font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+              <span>👩‍❤️‍👨</span>
+              <span>${isMovingTogether ? 'Đang cùng di chuyển' : 'Đang ở bên nhau 💕'}</span>
+            </div>
+          </div>
+        `;
+
+        const coupleIcon = L.divIcon({
+          className: 'custom-couple-together-marker-icon',
+          html: coupleHtml,
+          iconSize: [120, 64],
+          iconAnchor: [60, 32]
+        });
+
+        if (!coupleTogetherMarkerRef.current || !map.hasLayer(coupleTogetherMarkerRef.current)) {
+          if (coupleTogetherMarkerRef.current) {
+            try { map.removeLayer(coupleTogetherMarkerRef.current); } catch {}
+          }
+          coupleTogetherMarkerRef.current = L.marker([midLat, midLng], {
+            icon: coupleIcon,
+            zIndexOffset: 1200
+          }).addTo(map);
+        } else {
+          coupleTogetherMarkerRef.current.setLatLng([midLat, midLng]);
+          coupleTogetherMarkerRef.current.setIcon(coupleIcon);
+        }
+
+        const couplePopupContent = `
+          <div style="font-family: inherit; min-width: 195px; text-align: center; padding: 4px;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 5px; font-weight: 900; font-size: 13px; color: #fb7185; margin-bottom: 3px;">
+              <span>💑</span>
+              <span>Hai bạn đang ở bên cạnh nhau! 💕</span>
+            </div>
+            <div style="font-size: 11px; color: #e4e4e7; line-height: 1.35; margin-bottom: 6px;">
+              📍 ${displayAddress}
+            </div>
+            <div style="font-size: 10px; color: #a1a1aa; background: rgba(255,255,255,0.08); padding: 4px 8px; border-radius: 8px;">
+              ${actualDistanceMeters !== null && actualDistanceMeters < 30 ? 'Khoảng cách siêu gần (< 30m)' : `Khoảng cách: ~${actualDistanceMeters}m`} · Hẹn hò vui vẻ 🥰
+            </div>
+          </div>
+        `;
+
+        coupleTogetherMarkerRef.current.unbindPopup();
+        coupleTogetherMarkerRef.current.bindPopup(couplePopupContent, {
+          className: 'custom-romantic-popup',
+          offset: [0, -26],
+          closeButton: false
+        });
+
+        coupleTogetherMarkerRef.current.off('click');
+        coupleTogetherMarkerRef.current.on('click', () => {
+          flyToOffset(map, midLat, midLng, 17, 80);
+          setSheetCollapsed(false);
+          coupleTogetherMarkerRef.current?.openPopup();
+        });
+
       } else {
-        distanceBadgeMarkerRef.current.setLatLng([midLat, midLng]);
-        distanceBadgeMarkerRef.current.setIcon(badgeIcon);
+        // Khi ở xa (> 80m): Xóa Couple Together Marker
+        if (coupleTogetherMarkerRef.current) {
+          try { map.removeLayer(coupleTogetherMarkerRef.current); } catch {}
+          coupleTogetherMarkerRef.current = null;
+        }
+
+        // Vẽ vệt sáng và đường nối giữa hai người
+        const latlngs = [
+          [myLocation.latitude, myLocation.longitude],
+          [partnerLocation.latitude, partnerLocation.longitude]
+        ];
+
+        if (!polylineGlowRef.current || !map.hasLayer(polylineGlowRef.current)) {
+          if (polylineGlowRef.current) {
+            try { map.removeLayer(polylineGlowRef.current); } catch {}
+          }
+          polylineGlowRef.current = L.polyline(latlngs, {
+            color: '#f43f5e',
+            weight: 7,
+            opacity: 0.3,
+            lineCap: 'round'
+          }).addTo(map);
+        } else {
+          polylineGlowRef.current.setLatLngs(latlngs);
+        }
+
+        if (!polylineRef.current || !map.hasLayer(polylineRef.current)) {
+          if (polylineRef.current) {
+            try { map.removeLayer(polylineRef.current); } catch {}
+          }
+          polylineRef.current = L.polyline(latlngs, {
+            color: '#fda4af',
+            weight: 3,
+            opacity: 0.9,
+            dashArray: '10, 8',
+            lineCap: 'round'
+          }).addTo(map);
+        } else {
+          polylineRef.current.setLatLngs(latlngs);
+        }
+
+        // Huy hiệu khoảng cách ở giữa
+        const badgeHtml = `
+          <div class="couple-bridge-label-wrap pointer-events-auto cursor-pointer" style="display: flex; align-items: center; justify-content: center;">
+            <div class="couple-bridge-label px-3 py-1.5 rounded-full bg-zinc-950/95 backdrop-blur-md border border-rose-500/70 shadow-[0_4px_25px_rgba(244,63,94,0.6)] text-white text-[11px] font-black flex items-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:scale-105">
+              <span class="animate-pulse">💕</span>
+              <span>Cách nhau <strong style="color: #fb7185; font-size: 12px; margin-left: 2px;">${distFormatted}</strong></span>
+            </div>
+          </div>
+        `;
+
+        const badgeIcon = L.divIcon({
+          className: 'custom-couple-distance-badge-icon',
+          html: badgeHtml,
+          iconSize: [160, 32],
+          iconAnchor: [80, 16]
+        });
+
+        if (!distanceBadgeMarkerRef.current || !map.hasLayer(distanceBadgeMarkerRef.current)) {
+          if (distanceBadgeMarkerRef.current) {
+            try { map.removeLayer(distanceBadgeMarkerRef.current); } catch {}
+          }
+          distanceBadgeMarkerRef.current = L.marker([midLat, midLng], {
+            icon: badgeIcon,
+            zIndexOffset: 1500
+          }).addTo(map);
+        } else {
+          distanceBadgeMarkerRef.current.setLatLng([midLat, midLng]);
+          distanceBadgeMarkerRef.current.setIcon(badgeIcon);
+        }
+
+        distanceBadgeMarkerRef.current.off('click');
+        distanceBadgeMarkerRef.current.on('click', () => {
+          fitBothInView();
+          showToast(`Hai bạn đang cách nhau ${distFormatted} 💕`, 'info');
+        });
       }
-
-      distanceBadgeMarkerRef.current.off('click');
-      distanceBadgeMarkerRef.current.on('click', () => {
-        fitBothInView();
-        showToast(`Hai bạn đang cách nhau ${distFormatted} 💕`, 'info');
-      });
-
     } else {
+      if (coupleTogetherMarkerRef.current) {
+        try { map.removeLayer(coupleTogetherMarkerRef.current); } catch {}
+        coupleTogetherMarkerRef.current = null;
+      }
       if (polylineGlowRef.current) {
         try { map.removeLayer(polylineGlowRef.current); } catch {}
         polylineGlowRef.current = null;
@@ -688,7 +878,7 @@ export default function TabLocation() {
         distanceBadgeMarkerRef.current = null;
       }
     }
-  }, [myLocation, partnerLocation, distanceBetweenMeters, mapReady]);
+  }, [myLocation, partnerLocation, actualDistanceMeters, isTogether, mapReady, displayAddress, user, partner, myName, partnerName]);
 
   // ─── 6. HIỂN THỊ ĐỊA ĐIỂM ĐÃ LƯU (SAVED PLACES) ───
   useEffect(() => {
@@ -764,8 +954,6 @@ export default function TabLocation() {
     setNewPlaceName('');
   };
 
-  const partnerName = partner?.display_name || partner?.full_name || 'Người yêu';
-
   return (
     <div className="fixed inset-0 w-full h-[100dvh] overflow-hidden select-none z-0 bg-zinc-950">
       
@@ -794,7 +982,9 @@ export default function TabLocation() {
                 </span>
               </h2>
               <p className="text-[10px] text-zinc-400 font-medium truncate">
-                {partnerLocation?.is_sharing !== false ? `Đồng bộ với ${partnerName}` : 'Người yêu chưa bật chia sẻ'}
+                {isTogether 
+                  ? `💑 Đang ở bên cạnh ${partnerName} 💕` 
+                  : (partnerLocation?.is_sharing !== false ? `Đồng bộ với ${partnerName}` : 'Người yêu chưa bật chia sẻ')}
               </p>
             </div>
           </div>
@@ -938,10 +1128,21 @@ export default function TabLocation() {
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0">
-              <span className="text-xs font-black text-rose-300 bg-rose-500/15 border border-rose-500/30 px-2.5 py-0.5 rounded-full">
-                {formatDistance(distanceBetweenMeters)}
+              <span className={`text-xs font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
+                isTogether 
+                  ? 'text-emerald-300 bg-emerald-500/20 border border-emerald-500/30' 
+                  : 'text-rose-300 bg-rose-500/15 border border-rose-500/30'
+              }`}>
+                {isTogether ? (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Ở cạnh nhau 💕</span>
+                  </>
+                ) : (
+                  `Cách nhau ${formatDistance(actualDistanceMeters)}`
+                )}
               </span>
-              {partnerLocation?.latitude && partnerLocation?.longitude && partnerLocation?.is_sharing !== false && (
+              {!isTogether && partnerLocation?.latitude && partnerLocation?.longitude && partnerLocation?.is_sharing !== false && (
                 <a
                   href={getGoogleMapsDirectionsUrl(partnerLocation.latitude, partnerLocation.longitude)}
                   target="_blank"
@@ -1011,15 +1212,26 @@ export default function TabLocation() {
                   </div>
                   <p className="text-xs text-sky-300 font-bold flex items-center gap-1 truncate mt-0.5">
                     <MapPin size={12} className="flex-shrink-0 text-rose-400" />
-                    <span className="truncate">{partnerLocation?.address_name || 'Đang chờ cập nhật địa chỉ...'}</span>
+                    <span className="truncate">{displayAddress}</span>
                   </p>
                 </div>
               </div>
 
               {/* Huy hiệu khoảng cách góc phải */}
               <div className="text-right flex-shrink-0">
-                <span className="inline-block text-xs font-black text-rose-300 bg-rose-500/15 border border-rose-500/30 px-2.5 py-1 rounded-full whitespace-nowrap">
-                  {formatDistance(distanceBetweenMeters)}
+                <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${
+                  isTogether
+                    ? 'text-emerald-300 bg-emerald-500/20 border border-emerald-500/30'
+                    : 'text-rose-300 bg-rose-500/15 border border-rose-500/30'
+                }`}>
+                  {isTogether ? (
+                    <>
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>Ở cạnh nhau 🥰</span>
+                    </>
+                  ) : (
+                    `Cách nhau ${formatDistance(actualDistanceMeters)}`
+                  )}
                 </span>
                 <div className="text-[10px] text-zinc-400 font-medium mt-1">
                   {partnerLocation?.recorded_at ? formatTimeAgo(partnerLocation.recorded_at) : 'Chưa có tọa độ'}
@@ -1027,8 +1239,34 @@ export default function TabLocation() {
               </div>
             </div>
 
-            {/* NÚT CHỈ ĐƯỜNG GOOGLE MAPS (Full Width, rõ ràng, không bị xén chữ) */}
-            {partnerLocation?.latitude && partnerLocation?.longitude && partnerLocation?.is_sharing !== false ? (
+            {/* THẺ HÀNH ĐỘNG: KHI ĐANG Ở CẠNH NHAU vs KHI Ở XA */}
+            {isTogether ? (
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-rose-500/20 via-pink-500/20 to-purple-500/20 border border-rose-500/40 shadow-lg shadow-rose-500/10 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center text-lg shadow-md shrink-0">
+                    💑
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-white block truncate">Hai bạn đang ở bên cạnh nhau! 💕</span>
+                    <span className="text-[11px] text-rose-200/90 font-medium block truncate">
+                      {actualDistanceMeters !== null && actualDistanceMeters < 30 ? 'Khoảng cách siêu gần (< 30m)' : `Khoảng cách ~${actualDistanceMeters}m`} · Chúc hai bạn hẹn hò vui vẻ 🥰
+                    </span>
+                  </div>
+                </div>
+
+                {partnerLocation?.latitude && (
+                  <a
+                    href={getGoogleMapsDirectionsUrl(partnerLocation.latitude, partnerLocation.longitude)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white shrink-0 active:scale-95 transition-all text-[11px] font-bold flex items-center gap-1 border border-white/10"
+                    title="Mở Google Maps xem xung quanh quán"
+                  >
+                    <ExternalLink size={13} />
+                  </a>
+                )}
+              </div>
+            ) : partnerLocation?.latitude && partnerLocation?.longitude && partnerLocation?.is_sharing !== false ? (
               <div className="pt-0.5">
                 <a
                   href={getGoogleMapsDirectionsUrl(partnerLocation.latitude, partnerLocation.longitude)}
@@ -1061,16 +1299,20 @@ export default function TabLocation() {
               <div className="p-2 rounded-2xl bg-zinc-900/70 border border-white/5 flex flex-col">
                 <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider mb-0.5">Trạng thái</span>
                 <span className="font-bold text-white truncate text-[11px]">
-                  {partnerLocation?.is_sharing === false 
-                    ? 'Đã tạm dừng chia sẻ' 
-                    : formatSpeed(partnerLocation?.speed)}
+                  {isTogether 
+                    ? (partnerLocation?.speed && partnerLocation.speed > 1 
+                        ? `💑 Cùng di chuyển (~${Math.round(partnerLocation.speed * 3.6)} km/h)` 
+                        : '💑 Đang ở cùng bạn')
+                    : (partnerLocation?.is_sharing === false 
+                        ? 'Đã tạm dừng chia sẻ' 
+                        : formatSpeed(partnerLocation?.speed))}
                 </span>
               </div>
 
               <div className="p-2 rounded-2xl bg-zinc-900/70 border border-white/5 flex flex-col">
                 <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider mb-0.5">Lộ trình hôm nay</span>
                 <span className="font-bold text-rose-300 truncate text-[11px]">
-                  {partnerTrail && partnerTrail.length >= 2 ? `${partnerTrail.length} điểm đã đi qua 📍` : 'Chưa có vệt đường'}
+                  {partnerTrail && partnerTrail.length >= 2 ? `${partnerTrail.length} điểm đã đi qua 📍` : (isTogether ? 'Đang ở cùng nhau' : 'Chưa có vệt đường')}
                 </span>
               </div>
             </div>
@@ -1082,12 +1324,18 @@ export default function TabLocation() {
                 <span>Gửi cập nhật nhanh cho {partnerName}:</span>
               </div>
               <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-                {[
+                {(isTogether ? [
+                  { text: '🥤 Em muốn uống gì để anh mua nha 🧋', icon: '🧋' },
+                  { text: '📸 Chụp tấm hình kỷ niệm nha 📸', icon: '📸' },
+                  { text: '👫 Nắm tay nhau đi dạo nè 💖', icon: '👫' },
+                  { text: '🍜 Lát mình đi ăn gì tiếp không? 🍕', icon: '🍕' },
+                  { text: '🥰 Ở cạnh người yêu thích thật 💕', icon: '💕' }
+                ] : [
                   { text: 'Đang trên đường về 🛵', icon: '🛵' },
                   { text: 'Đã về đến nhà an toàn 🏠', icon: '🏠' },
                   { text: 'Đang ở chỗ làm 💼', icon: '💼' },
                   { text: 'Nhớ YOU quá 💕', icon: '💕' }
-                ].map((msg) => (
+                ]).map((msg) => (
                   <button
                     key={msg.text}
                     type="button"

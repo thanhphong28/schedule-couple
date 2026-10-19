@@ -511,7 +511,7 @@ export default function BodySilhouetteCard({
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center justify-between gap-1">
                   <span className="text-xs font-bold text-white">{item.title}</span>
-                  <span className="text-[10px] text-cyan-300 font-mono font-bold">{item.phase}</span>
+                  <span className="text-[10px] text-cyan-300 font-bold">{item.phase}</span>
                 </div>
                 <p className="text-[10px] sm:text-[11px] text-zinc-400 mt-0.5 leading-relaxed font-medium">
                   {item.detail}

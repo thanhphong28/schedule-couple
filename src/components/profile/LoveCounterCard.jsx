@@ -106,8 +106,9 @@ export default function LoveCounterCard({ user, partner, couple, refreshAuth }) 
   useEffect(() => {
     if (effectiveStartDate) setStartDateInput(effectiveStartDate);
     setAnniversaryTitleInput(couple?.anniversary_title || 'Ngày chúng mình bắt đầu');
-    setStickyEnabled(couple?.sticky_notification_enabled || false);
-    setStickyFormat(couple?.sticky_notification_format || 'standard');
+    if (couple?.sticky_notification_enabled !== undefined && couple?.sticky_notification_enabled !== null) {
+      setStickyEnabled(Boolean(couple.sticky_notification_enabled));
+    }
   }, [couple, effectiveStartDate]);
 
   // Tính toán số ngày yêu
@@ -869,7 +870,7 @@ export default function LoveCounterCard({ user, partner, couple, refreshAuth }) 
             </div>
 
             <div className="text-[10px] text-zinc-400 px-1 flex items-center justify-between">
-              <span>Đang ghim: <strong className="text-rose-300 font-mono">{currentStickyPreview}</strong></span>
+              <span>Đang ghim: <strong className="text-rose-300 font-semibold">{currentStickyPreview}</strong></span>
               <span className={`font-semibold ${stickyEnabled ? 'text-emerald-400' : 'text-zinc-500'}`}>
                 {stickyEnabled ? 'Đang ghim trên máy' : 'Chưa ghim'}
               </span>

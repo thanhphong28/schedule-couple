@@ -38,9 +38,20 @@ let activeGattServer = null;
 let activeDevice = null;
 let activeHrChar = null;
 
+// Danh sách thương hiệu đồng hồ phổ biến (dùng cho ghi nhận nguồn dữ liệu)
+export const COMMON_WATCH_BRANDS = [
+  { id: 'huafit', name: 'Huafit Q5', icon: '⌚' },
+  { id: 'apple', name: 'Apple Watch', icon: '🍏' },
+  { id: 'xiaomi', name: 'Xiaomi / Redmi / Mi Band', icon: '🟠' },
+  { id: 'huawei', name: 'Huawei Watch / Band', icon: '🔴' },
+  { id: 'samsung', name: 'Samsung Galaxy Watch', icon: '⚡' },
+  { id: 'garmin', name: 'Garmin Watch', icon: '🏃' },
+  { id: 'other', name: 'Đồng hồ thông minh khác', icon: '⌚' }
+];
+
 /**
- * Thực hiện quét và kết nối trực tiếp với Đồng Hồ / Vòng đeo tay Bluetooth
- * Sử dụng Web Bluetooth GATT API chuẩn
+ * Thực hiện quét và kết nối trực tiếp với Đồng Hồ / Vòng đeo tay Bluetooth THẬT
+ * Sử dụng Web Bluetooth GATT API chuẩn của Google Chrome
  */
 export async function connectGattSmartwatch({ 
   onHeartRateUpdate, 
@@ -50,24 +61,33 @@ export async function connectGattSmartwatch({
   onDisconnected 
 }) {
   if (!isWebBluetoothSupported()) {
-    throw new Error('Trình duyệt hiện tại chưa hỗ trợ Web Bluetooth. Bạn hãy dùng Google Chrome trên điện thoại Android (hoặc trình duyệt Bluefy trên iPhone) nhé!');
+    throw new Error('Trình duyệt hiện tại chưa hỗ trợ Web Bluetooth API. Hãy mở trang web trên trình duyệt Google Chrome trên điện thoại Android nhé!');
   }
 
-  // 1. Quét tìm thiết bị Bluetooth (Mở hộp thoại trình duyệt)
-  const device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: [
-      'heart_rate',          // 0x180D - Chuẩn nhịp tim Bluetooth SIG
-      'battery_service',     // 0x180F - Mức pin
-      'device_information',  // 0x180A - Tên & hãng sản xuất
-      0x1822,                // Pulse Oximeter Service (SpO2)
-      0x1814,                // Running Speed and Cadence (Bước chân & Tốc độ)
-      0x1826,                // Fitness Machine
-      0xFEE0,                // Mi Band / Huami
-      0xFEE7,                // Da Fit / WeChat Sports
-      '6e400001-b5a3-f393-e0a9-e50e24dcca9e' // Nordic UART (Da Fit / Huafit / Colmi)
-    ]
-  });
+  // Quét tìm thiết bị Bluetooth:
+  // Dùng acceptAllDevices: true để hiển thị tất cả đồng hồ BLE đang phát sóng ở gần
+  let device;
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [
+        'heart_rate',
+        'battery_service',
+        'device_information',
+        0x1822, // Pulse Oximeter (SpO2)
+        0x1814, // Running Speed and Cadence (Steps)
+        0x1826, // Fitness Machine
+        0xFEE0, // Xiaomi / Amazfit
+        0xFEE7,
+        '6e400001-b5a3-f393-e0a9-e50e24dcca9e' // Nordic UART
+      ]
+    });
+  } catch (err) {
+    if (err.name === 'NotFoundError') {
+      throw err; // Người dùng chủ động bấm Hủy
+    }
+    throw new Error('Không thể mở hộp thoại quét Bluetooth: ' + err.message);
+  }
 
   if (!device) {
     throw new Error('Chưa chọn thiết bị nào.');
@@ -78,7 +98,7 @@ export async function connectGattSmartwatch({
   try {
     server = await device.gatt.connect();
   } catch (gattErr) {
-    throw new Error('Không thể kết nối với đồng hồ. Hãy kiểm tra đồng hồ đã bật Bluetooth, ở gần điện thoại và sẵn sàng nhận kết nối: ' + gattErr.message);
+    throw new Error(`Không thể kết nối GATT với "${device.name || 'Đồng hồ'}": ${gattErr.message}. Nếu đồng hồ đang bị ứng dụng Galaxy Wearable/Mi Fitness chiếm quyền độc quyền, hãy bật tính năng "Phát nhịp tim / Broadcast Heart Rate" trên đồng hồ trước khi kết nối.`);
   }
   activeGattServer = server;
   activeDevice = device;

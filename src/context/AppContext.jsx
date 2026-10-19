@@ -69,7 +69,7 @@ export const PRESET_WALLPAPERS = [
 ];
 
 export function AppProvider({ children }) {
-  const { user, couple } = useAuth();
+  const { user, partner, couple } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [taskLogs, setTaskLogs] = useState([]);
   const [reviews, setReviews] = useState([]);
@@ -151,100 +151,7 @@ export function AppProvider({ children }) {
     }
   }, [user?.id, user?.theme_id, user?.wallpaper_id]);
 
-  useEffect(() => {
-    if (!couple?.id) return;
-    const taskSub = supabase
-      .channel('tasks-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `couple_id=eq.${couple.id}` }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          // Chỉ thông báo cho đối phương, không thông báo cho chính người vừa tạo task
-          const isCreatedByPartner = payload.new?.created_by && payload.new.created_by !== user?.id;
-          if (isCreatedByPartner) {
-            playNotificationChime();
-            showToast('Nửa kia vừa thêm một công việc mới kìa! 📝', 'success');
-          }
-        }
-        sbGetTasks(couple.id).then(setTasks).catch(console.error);
-      })
-      .subscribe();
-
-    const taskLogsSub = supabase
-      .channel('task-logs-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_logs', filter: `couple_id=eq.${couple.id}` }, () => {
-        sbGetTaskLogs(couple.id).then(setTaskLogs).catch(console.error);
-      })
-      .subscribe();
-
-    const reviewSub = supabase
-      .channel('reviews-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_reviews', filter: `couple_id=eq.${couple.id}` }, () => {
-        sbGetReviews(couple.id).then(setReviews).catch(console.error);
-      })
-      .subscribe();
-
-    const wpSub = supabase
-      .channel('wallpapers-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallpapers', filter: `couple_id=eq.${couple.id}` }, () => {
-        sbGetWallpapers(couple.id).then(wps => {
-          if (wps) {
-            setCustomWallpapers(wps);
-          }
-        }).catch(console.error);
-      })
-      .subscribe();
-
-    const userSub = supabase
-      .channel('user-settings-rt')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${user?.id}` }, (payload) => {
-        if (payload.new.theme_id) {
-          setThemeIdRaw(payload.new.theme_id);
-        }
-        if (payload.new.wallpaper_id !== undefined) {
-          setWallpaperRaw(payload.new.wallpaper_id);
-        }
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(taskSub);
-      supabase.removeChannel(taskLogsSub);
-      supabase.removeChannel(reviewSub);
-      supabase.removeChannel(wpSub);
-      supabase.removeChannel(userSub);
-    };
-  }, [couple, user]);
-
-  // ── Custom Wallpaper operations ──────────────────────────────────────────
-  function addCustomWallpaper({ id, name, url }) {
-    const newWp = {
-      id: id || nanoid(),
-      name: name || 'Ảnh kỷ niệm 💕',
-      url,
-      is_custom: true,
-      couple_id: couple?.id,
-      created_at: new Date().toISOString(),
-    };
-    setCustomWallpapers(prev => {
-      const next = [newWp, ...prev.filter(w => w.id !== newWp.id)];
-      return next;
-    });
-    setWallpaper(newWp.id);
-    sbUpsertWallpaper(newWp);
-    return newWp;
-  }
-
-  function deleteCustomWallpaper(id) {
-    setCustomWallpapers(prev => {
-      const next = prev.filter(w => w.id !== id);
-      return next;
-    });
-    if (wallpaper === id) {
-      setWallpaper(null); // Reset to theme default if the deleted one was active
-    }
-    sbDeleteWallpaper(id);
-  }
-
-  // ── Browser & In-App Notifications ──────────────────────────────────────────
+  // ── Browser & In-App Notifications State & Helpers ──────────────────────────
   const [activeNotification, setActiveNotification] = useState(null);
   const [notificationHistory, setNotificationHistory] = useState(() => {
     return lsGet('sc_notif_history') || [];
@@ -283,7 +190,7 @@ export function AppProvider({ children }) {
   }, [activeNotification]);
 
   const requestNotifPermission = async () => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
+    if (typeof window !== 'undefined' || !('Notification' in window)) {
       setNotifPermission('unsupported');
       return 'unsupported';
     }
@@ -297,8 +204,16 @@ export function AppProvider({ children }) {
     }
   };
 
-  const sendNotification = ({ title, body, taskId, isDue, timeStr }) => {
-    // 1. Pleasant soft audio chime
+  const tasksRef = useRef(tasks);
+  const taskLogsRef = useRef(taskLogs);
+  useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+  useEffect(() => { taskLogsRef.current = taskLogs; }, [taskLogs]);
+
+  const toggleTaskRef = useRef(null);
+  const toggleTaskInstanceRef = useRef(null);
+
+  const sendNotification = ({ title, body, taskId, isDue, timeStr, icon, actionType, cheerId }) => {
+    // 1. Dual-tone audio chime (Web Audio API)
     playNotificationChime();
 
     const notifData = {
@@ -308,20 +223,23 @@ export function AppProvider({ children }) {
       taskId,
       isDue,
       timeStr,
+      icon: icon || (isDue ? '⏰' : (taskId ? '⏳' : '💌')),
+      actionType,
+      cheerId,
       timestamp: Date.now(),
     };
 
-    // 2. In-App Floating Banner (guaranteed visibility on all devices)
+    // 2. In-App Floating Banner (Hiển thị nổi trên tất cả thiết bị kể cả iPhone Safari)
     setActiveNotification(notifData);
     addNotificationToHistory(notifData);
 
-    // 3. System Web Notification (if permission granted by browser)
+    // 3. System Web Notification (Khi trình duyệt/PWA cấp quyền)
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       const notifOptions = {
         body,
-        icon: '/logo192.png',
-        badge: '/logo192.png',
-        tag: taskId ? `task-${taskId}-${isDue ? 'due' : '5m'}` : 'test',
+        icon: '/icon.png',
+        badge: '/icon.png',
+        tag: taskId ? `task-${taskId}-${isDue ? 'due' : '5m'}` : (cheerId ? `cheer-${cheerId}` : 'notif-' + Date.now()),
         requireInteraction: true,
       };
 
@@ -346,26 +264,314 @@ export function AppProvider({ children }) {
     }
   };
 
+  // Ghi nhận nhanh 250ml nước từ thông báo nhắc nhở
+  const quickLogWater = async (amount = 250) => {
+    if (!user?.id) return;
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${yyyy}-${mm}-${dd}`;
+    const nowIso = now.toISOString();
+
+    const newLog = {
+      user_id: user.id,
+      amount: parseInt(amount, 10),
+      log_date: todayStr,
+      log_time: nowIso,
+      note: 'Uống nhanh từ thông báo 💧'
+    };
+
+    try {
+      const localKey = `sc_water_${user.id}_${todayStr}`;
+      const existing = JSON.parse(localStorage.getItem(localKey) || '[]');
+      localStorage.setItem(localKey, JSON.stringify([newLog, ...existing]));
+    } catch {}
+
+    if (isSupabaseReady) {
+      try {
+        await supabase.from('water_logs').insert([newLog]);
+      } catch (err) {
+        console.warn('Lỗi ghi nhanh water_logs:', err);
+      }
+    }
+
+    showToast(`Đã uống +${amount}ml nước mát! Tươi tắn quá 💧✨`, 'success');
+    dismissNotification();
+  };
+
   const triggerTestNotification = async () => {
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
       await requestNotifPermission();
     }
     sendNotification({
       title: '🧪 Thử nghiệm thông báo 💕',
-      body: 'Hệ thống nhắc nhở trước 5 phút và đúng giờ đang hoạt động cực kỳ mượt mà trên máy của bạn!',
+      body: 'Hệ thống chuông và thông báo nhắc nhở đang hoạt động cực kỳ mượt mà trên máy của bạn!',
       taskId: null,
       isDue: false,
       timeStr: 'Bây giờ',
+      icon: '🔔'
     });
   };
 
-  const tasksRef = useRef(tasks);
-  const taskLogsRef = useRef(taskLogs);
-  useEffect(() => { tasksRef.current = tasks; }, [tasks]);
-  useEffect(() => { taskLogsRef.current = taskLogs; }, [taskLogs]);
+  // Bộ lọc chống trùng lặp thông báo realtime
+  const processedNotifKeysRef = useRef(new Set());
+  const handleIncomingCheer = (cheer) => {
+    if (!cheer) return;
+    if (cheer.sender_id === user?.id) return;
+    if (cheer.receiver_id && cheer.receiver_id !== user?.id) return;
 
-  const toggleTaskRef = useRef(null);
-  const toggleTaskInstanceRef = useRef(null);
+    const notifKey = cheer.id || `${cheer.sender_id}_${cheer.cheer_type}_${cheer.message}_${Math.floor(Date.now() / 4000)}`;
+    if (processedNotifKeysRef.current.has(notifKey)) return;
+    processedNotifKeysRef.current.add(notifKey);
+
+    if (processedNotifKeysRef.current.size > 50) {
+      const arr = Array.from(processedNotifKeysRef.current);
+      processedNotifKeysRef.current = new Set(arr.slice(-30));
+    }
+
+    const senderName = cheer.sender_name || partner?.display_name || partner?.full_name || 'Người yêu';
+    let title = `💌 Lời nhắn từ ${senderName}`;
+    let icon = '💌';
+    let actionType = null;
+
+    if (cheer.cheer_type === 'drink_water') {
+      title = `💧 ${senderName} nhắc bạn uống nước!`;
+      icon = '💧';
+      actionType = 'drink_water';
+    } else if (cheer.cheer_type === 'workout') {
+      title = `🏃‍♂️ ${senderName} nhắc bạn vận động!`;
+      icon = '🏃‍♂️';
+    } else if (cheer.cheer_type === 'congrats') {
+      title = `🎉 Lời khen từ ${senderName}!`;
+      icon = '🎉';
+    } else if (cheer.cheer_type === 'hug') {
+      title = `🧸 Cái ôm từ ${senderName}`;
+      icon = '🧸';
+    } else if (cheer.cheer_type === 'status_message') {
+      title = `🛵 ${senderName} vừa cập nhật:`;
+      icon = '🛵';
+    }
+
+    sendNotification({
+      title,
+      body: cheer.message || 'Gửi gắm yêu thương tới bạn 💕',
+      icon,
+      actionType,
+      cheerId: cheer.id
+    });
+  };
+
+  // ── LẮNG NGHE REALTIME TOÀN ỨNG DỤNG (TASKS, HOÀN THÀNH, LỜI NHẮN, NHẮC NƯỚC) ──
+  useEffect(() => {
+    if (!couple?.id) return;
+
+    // 1. Tasks realtime
+    const taskSub = supabase
+      .channel(`tasks-rt-${couple.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `couple_id=eq.${couple.id}` }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const isCreatedByPartner = payload.new?.created_by && payload.new.created_by !== user?.id;
+          if (isCreatedByPartner) {
+            sendNotification({
+              title: `📝 ${partner?.display_name || 'Nửa kia'} vừa thêm việc mới!`,
+              body: `"${payload.new?.title || 'Công việc mới'}" — Vào xem lịch trình nhé 💕`,
+              icon: '📝',
+              taskId: payload.new?.id
+            });
+          }
+        }
+        sbGetTasks(couple.id).then(setTasks).catch(console.error);
+      })
+      .subscribe();
+
+    // 2. Task Logs realtime (khi đối phương hoàn thành công việc)
+    const taskLogsSub = supabase
+      .channel(`task-logs-rt-${couple.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_logs', filter: `couple_id=eq.${couple.id}` }, (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          if (payload.new?.is_completed && payload.new?.user_id && payload.new.user_id !== user?.id) {
+            const completedTask = tasksRef.current.find(t => t.id === payload.new.task_id);
+            const taskTitle = completedTask?.title ? `"${completedTask.title}"` : 'một công việc';
+            sendNotification({
+              title: `✨ ${partner?.display_name || 'Nửa kia'} vừa hoàn thành một việc!`,
+              body: `Đã xong ${taskTitle} 🎉 Đáng yêu quá!`,
+              icon: '✨'
+            });
+          }
+        }
+        sbGetTaskLogs(couple.id).then(setTaskLogs).catch(console.error);
+      })
+      .subscribe();
+
+    // 3. Weekly reviews
+    const reviewSub = supabase
+      .channel(`reviews-rt-${couple.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_reviews', filter: `couple_id=eq.${couple.id}` }, () => {
+        sbGetReviews(couple.id).then(setReviews).catch(console.error);
+      })
+      .subscribe();
+
+    // 4. Wallpapers
+    const wpSub = supabase
+      .channel(`wallpapers-rt-${couple.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallpapers', filter: `couple_id=eq.${couple.id}` }, () => {
+        sbGetWallpapers(couple.id).then(wps => {
+          if (wps) setCustomWallpapers(wps);
+        }).catch(console.error);
+      })
+      .subscribe();
+
+    // 5. User settings
+    const userSub = supabase
+      .channel(`user-settings-rt-${user?.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${user?.id}` }, (payload) => {
+        if (payload.new.theme_id) setThemeIdRaw(payload.new.theme_id);
+        if (payload.new.wallpaper_id !== undefined) setWallpaperRaw(payload.new.wallpaper_id);
+      })
+      .subscribe();
+
+    // 6. Lời nhắn yêu thương & Nhắc uống nước (couple_cheers) qua Postgres Changes
+    const cheersSub = supabase
+      .channel(`couple-cheers-global-${user?.id}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'couple_cheers', 
+        filter: `receiver_id=eq.${user?.id}` 
+      }, (payload) => {
+        handleIncomingCheer(payload.new);
+      })
+      .subscribe();
+
+    // 7. Kênh Broadcast WebSocket tức thời cho cặp đôi (Zero-latency P2P)
+    const notifySub = supabase
+      .channel(`couple_notifications_${couple.id}`, {
+        config: { broadcast: { self: false } }
+      })
+      .on('broadcast', { event: 'new_cheer' }, ({ payload }) => {
+        handleIncomingCheer(payload);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(taskSub);
+      supabase.removeChannel(taskLogsSub);
+      supabase.removeChannel(reviewSub);
+      supabase.removeChannel(wpSub);
+      supabase.removeChannel(userSub);
+      supabase.removeChannel(cheersSub);
+      supabase.removeChannel(notifySub);
+    };
+  }, [couple?.id, user?.id, partner?.id]);
+
+  // ── Custom Wallpaper operations ──────────────────────────────────────────
+  function addCustomWallpaper({ id, name, url }) {
+    const newWp = {
+      id: id || nanoid(),
+      name: name || 'Ảnh kỷ niệm 💕',
+      url,
+      is_custom: true,
+      couple_id: couple?.id,
+      created_at: new Date().toISOString(),
+    };
+    setCustomWallpapers(prev => {
+      const next = [newWp, ...prev.filter(w => w.id !== newWp.id)];
+      return next;
+    });
+    setWallpaper(newWp.id);
+    sbUpsertWallpaper(newWp);
+    return newWp;
+  }
+
+  function deleteCustomWallpaper(id) {
+    setCustomWallpapers(prev => {
+      const next = prev.filter(w => w.id !== id);
+      return next;
+    });
+    if (wallpaper === id) {
+      setWallpaper(null); // Reset to theme default if the deleted one was active
+    }
+    sbDeleteWallpaper(id);
+  }
+
+  // ── Smart Scheduled Water Reminders Ticker ──────────────────────────────────
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let waterSettings = null;
+
+    const loadWaterSettings = async () => {
+      try {
+        const localSettings = lsGet(`sc_water_reminder_settings_${user.id}`);
+        if (localSettings) waterSettings = localSettings;
+
+        if (isSupabaseReady) {
+          const { data } = await supabase
+            .from('health_profiles')
+            .select('water_reminder_enabled, water_reminder_start, water_reminder_end, water_reminder_interval, daily_water_goal')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (data) {
+            waterSettings = data;
+            lsSet(`sc_water_reminder_settings_${user.id}`, data);
+          }
+        }
+      } catch (err) {
+        console.warn('Lỗi load water reminder settings:', err);
+      }
+    };
+
+    loadWaterSettings();
+
+    const checkWaterReminder = () => {
+      const settings = waterSettings || lsGet(`sc_water_reminder_settings_${user.id}`) || {
+        water_reminder_enabled: true,
+        water_reminder_start: '08:00',
+        water_reminder_end: '21:00',
+        water_reminder_interval: 90
+      };
+
+      if (!settings.water_reminder_enabled) return;
+
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+
+      const [startH, startM] = (settings.water_reminder_start || '08:00').split(':').map(Number);
+      const [endH, endM] = (settings.water_reminder_end || '21:00').split(':').map(Number);
+      const startMins = (startH || 8) * 60 + (startM || 0);
+      const endMins = (endH || 21) * 60 + (endM || 0);
+
+      // Chỉ nhắc trong khung giờ hoạt động
+      if (nowMins < startMins || nowMins > endMins) return;
+
+      const intervalMs = (settings.water_reminder_interval || 90) * 60 * 1000;
+      const lastReminder = parseInt(localStorage.getItem(`sc_last_water_remind_${user.id}`) || '0', 10);
+      const nowMs = Date.now();
+
+      // Lần đầu mở app: khởi tạo mốc thời gian bắt đầu tính chu kỳ
+      if (!lastReminder) {
+        localStorage.setItem(`sc_last_water_remind_${user.id}`, String(nowMs));
+        return;
+      }
+
+      // Nếu đã đến chu kỳ nhắc nhở
+      if (nowMs - lastReminder >= intervalMs) {
+        localStorage.setItem(`sc_last_water_remind_${user.id}`, String(nowMs));
+
+        sendNotification({
+          title: '💧 Đến giờ uống nước rồi!',
+          body: 'Nạp thêm một ngụm nước mát để giữ năng lượng và sức khỏe dồi dào nhé! 💕',
+          icon: '💧',
+          actionType: 'drink_water'
+        });
+      }
+    };
+
+    const waterInterval = setInterval(checkWaterReminder, 30000);
+    return () => clearInterval(waterInterval);
+  }, [user?.id]);
 
   useEffect(() => {
     const checkTasks = () => {
@@ -717,6 +923,7 @@ export function AppProvider({ children }) {
     WALLPAPERS: allWallpapers,
     activeNotification, dismissNotification, triggerTestNotification,
     notifPermission, requestNotifPermission, notificationHistory, clearNotification,
+    sendNotification, quickLogWater,
     synced,
   };
 

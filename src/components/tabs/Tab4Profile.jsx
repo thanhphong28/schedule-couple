@@ -7,16 +7,26 @@ import { compressImage } from '../../lib/utils.js';
 import { showToast } from '../shared/Toast.jsx';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
 
-import { LogOut, Palette, Link as LinkIcon, User, Camera } from 'lucide-react';
+import { LogOut, Palette, Link as LinkIcon, User, Camera, ChevronDown } from 'lucide-react';
+import LoveCounterCard from '../profile/LoveCounterCard.jsx';
+
+const THEMES = [
+  { id: 'minimal', name: 'Mặc định (Nhẹ)', emoji: '⚡', color: 'from-zinc-500 to-zinc-700' },
+  { id: 'ocean', name: 'Ocean Liquid Glass', emoji: '🌊', color: 'from-cyan-500 to-blue-500' },
+  { id: 'aurora', name: 'Aurora Fantasy', emoji: '🌌', color: 'from-purple-500 to-indigo-500' },
+  { id: 'winter', name: 'Winter Dream', emoji: '❄️', color: 'from-sky-200 to-blue-300' },
+  { id: 'surprise', name: 'Neon City', emoji: '🎨', color: 'from-rose-500 to-amber-400' },
+];
 
 export default function Tab4Profile() {
-  const { user, partner, logout, refreshAuth } = useAuth();
+  const { user, couple, partner, logout, refreshAuth } = useAuth();
   const { 
     themeId, setThemeId,
     wallpaper, setWallpaper, 
     customWallpapers, addCustomWallpaper, deleteCustomWallpaper 
   } = useApp();
   
+  const [isThemeOpen, setIsThemeOpen] = useState(false);
   const fileInputRef = useRef(null);
   const wpFileInputRef = useRef(null);
   
@@ -266,168 +276,198 @@ export default function Tab4Profile() {
         <h2 className="text-lg font-black text-white">{user?.display_name || 'Tên của bạn'}</h2>
         <p className="text-xs font-bold text-zinc-400">@{user?.username}</p>
         
-        {/* Connection Status */}
-        <div className="mt-4 p-3 rounded-2xl bg-zinc-900/50 border border-white/5">
-          {user?.couple_id ? (
-            <div className="flex flex-col items-center gap-1.5">
-              <div className="text-[10px] font-black text-rose-300 uppercase tracking-wide">Đã kết nối với</div>
-              <div className="flex items-center gap-2">
-                {partner ? (
-                  <>
-                    {partner?.avatar_url ? (
-                      <img src={partner.avatar_url} alt="Avatar" className="w-7 h-7 rounded-full object-cover border border-rose-400" />
-                    ) : (
-                      <span className="text-xl">{partner?.gender === 'MALE' ? '👦' : '👧'}</span>
-                    )}
-                    <span className="text-sm font-extrabold text-white">{partner?.display_name}</span>
-                  </>
+        {/* Connection Status - Compact & Sleek Pill */}
+        {user?.couple_id ? (
+          <div className="mt-3 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/25 max-w-full">
+            <span className="text-xs">💕</span>
+            <span className="text-[11px] font-bold text-zinc-400">Đã kết nối:</span>
+            {partner ? (
+              <div className="flex items-center gap-1.5 truncate">
+                {partner?.avatar_url ? (
+                  <img src={partner.avatar_url} alt="Avatar" className="w-5 h-5 rounded-full object-cover border border-rose-400 shrink-0" />
                 ) : (
-                  <span className="text-sm font-extrabold text-zinc-400">Không tìm thấy thông tin nửa kia</span>
+                  <span className="text-xs shrink-0">{partner?.gender === 'MALE' ? '👦' : '👧'}</span>
                 )}
+                <span className="text-xs font-black text-rose-300 truncate">@{partner.username || partner.display_name}</span>
               </div>
-              <button 
-                onClick={handleDisconnect}
-                disabled={loading}
-                className="mt-2 px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-xs font-bold hover:bg-red-500/30 transition-colors disabled:opacity-50"
-              >
-                {loading ? 'Đang xử lý...' : 'Hủy kết nối'}
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-2">
-              <div className="text-[10px] font-black text-zinc-400 uppercase tracking-wide">Chưa kết nối người yêu</div>
-              
-              {pendingInvites.length > 0 && (
-                <div className="w-full bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 mb-2 flex items-center justify-between">
-                  <div className="text-left">
-                    <p className="text-xs text-rose-300"><b>{pendingInvites[0].sender?.display_name}</b> muốn kết nối với bạn!</p>
-                  </div>
-                  <button onClick={() => setShowAcceptModal(pendingInvites[0])} className="px-3 py-1 bg-rose-500 text-white text-xs font-bold rounded-lg shadow-md hover:bg-rose-600 transition-all">
-                    Chấp nhận
-                  </button>
+            ) : (
+              <span className="text-xs text-zinc-400">Nửa kia</span>
+            )}
+            <button 
+              onClick={handleDisconnect}
+              disabled={loading}
+              className="ml-1 text-[10px] font-extrabold text-red-400 hover:text-red-300 transition-colors px-1.5 py-0.5 rounded-md hover:bg-red-500/20 shrink-0"
+              title="Hủy kết nối"
+            >
+              Hủy
+            </button>
+          </div>
+        ) : (
+          <div className="mt-3 flex flex-col items-center gap-2">
+            <div className="text-[10px] font-black text-zinc-400 uppercase tracking-wide">Chưa kết nối người yêu</div>
+            
+            {pendingInvites.length > 0 && (
+              <div className="w-full bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 mb-1 flex items-center justify-between">
+                <div className="text-left">
+                  <p className="text-xs text-rose-300"><b>{pendingInvites[0].sender?.display_name}</b> muốn kết nối với bạn!</p>
                 </div>
-              )}
+                <button onClick={() => setShowAcceptModal(pendingInvites[0])} className="px-3 py-1 bg-rose-500 text-white text-xs font-bold rounded-lg shadow-md hover:bg-rose-600 transition-all">
+                  Chấp nhận
+                </button>
+              </div>
+            )}
 
-              <button 
-                onClick={() => setShowInviteModal(true)}
-                className="flex items-center justify-center gap-1.5 w-full py-2.5 rounded-xl text-xs font-extrabold text-white bg-rose-500/90 hover:bg-rose-600 shadow-md transition-all active:scale-95"
-              >
-                <LinkIcon size={14} /> Mời kết nối ngay
-              </button>
-            </div>
-          )}
-        </div>
+            <button 
+              onClick={() => setShowInviteModal(true)}
+              className="flex items-center justify-center gap-1.5 w-full py-2 rounded-xl text-xs font-extrabold text-white bg-rose-500/90 hover:bg-rose-600 shadow-md transition-all active:scale-95"
+            >
+              <LinkIcon size={14} /> Mời kết nối ngay
+            </button>
+          </div>
+        )}
       </section>
 
-      {/* Theme / Wallpaper Settings */}
-      <section className="glass-panel p-4 rounded-[28px] border border-white/10 shadow-lg">
-        <h3 className="text-sm font-black text-white mb-3 flex items-center gap-1.5">
-          <Palette size={16} className="text-rose-400" />
-          Tùy chỉnh giao diện (Theme & Hình nền)
-        </h3>
-        
-        {/* THẾ GIỚI GIAO DIỆN (THEMES) */}
-        <div className="mb-5">
-          <h4 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest mb-2.5">Thế giới giao diện (Theme)</h4>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { id: 'minimal', name: 'Mặc định (Nhẹ)', emoji: '⚡', color: 'from-zinc-500 to-zinc-700' },
-              { id: 'ocean', name: 'Ocean Liquid Glass', emoji: '🌊', color: 'from-cyan-500 to-blue-500' },
-              { id: 'aurora', name: 'Aurora Fantasy', emoji: '🌌', color: 'from-purple-500 to-indigo-500' },
-              { id: 'winter', name: 'Winter Dream', emoji: '❄️', color: 'from-sky-200 to-blue-300' },
-              { id: 'surprise', name: 'Neon City', emoji: '🎨', color: 'from-rose-500 to-amber-400' },
-            ].map(t => {
-              const isActive = themeId === t.id;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    setThemeId(t.id);
-                    setWallpaper(null);
-                  }}
-                  className={`relative overflow-hidden rounded-2xl p-3 text-left transition-all group ${
-                    isActive 
-                      ? 'border-2 border-white/30 scale-[1.02] shadow-lg ring-2 ring-white/10' 
-                      : 'border border-white/5 bg-white/5 hover:bg-white/10 active:scale-95'
-                  }`}
-                >
-                  <div className={`absolute inset-0 bg-gradient-to-r ${t.color} opacity-20 group-hover:opacity-30 transition-opacity`} />
-                  {isActive && <div className={`absolute inset-0 bg-gradient-to-r ${t.color} opacity-30`} />}
-                  
-                  <div className="relative z-10 flex flex-col gap-1">
-                    <span className="text-xl">{t.emoji}</span>
-                    <div className={`font-black text-[11px] ${isActive ? 'text-white drop-shadow-md' : 'text-zinc-300'}`}>
-                      {t.name}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+      {/* ─── LOVE DAYS COUNTER & D-DAY ECOSYSTEM ────────────────────── */}
+      <LoveCounterCard 
+        user={user} 
+        partner={partner} 
+        couple={couple} 
+        refreshAuth={refreshAuth} 
+      />
 
-        {/* CUSTOM BACKGROUND */}
-        <div>
-          <h4 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest mb-2.5 flex items-center justify-between">
-            <span>Tùy chỉnh nền cá nhân</span>
-            <span className="text-[9px] lowercase opacity-70 font-normal">(Chỉ dùng ảnh bạn tải lên)</span>
-          </h4>
-          <input 
-            type="file" 
-            ref={wpFileInputRef} 
-            accept="image/*" 
-            onChange={handleWpUpload} 
-            className="hidden" 
-          />
-          <div className="grid grid-cols-2 gap-2">
-            {/* Upload Button */}
-            <button
-              onClick={() => wpFileInputRef.current?.click()}
-              className="relative rounded-xl h-24 overflow-hidden border-2 border-dashed border-rose-400/50 flex flex-col items-center justify-center text-rose-300 hover:bg-rose-500/10 hover:border-rose-400 transition-all active:scale-95"
-            >
-              <Camera size={20} className="mb-1" />
-              <span className="text-[10px] font-bold">Thêm ảnh của bạn</span>
-            </button>
-
-            {/* User Custom */}
-            {customWallpapers.map(wp => {
-              return (
-                <button
-                  key={wp.id}
-                  onClick={() => setWallpaper(wp.id)}
-                  className={`relative rounded-xl h-24 overflow-hidden border-2 transition-all ${
-                    wallpaper === wp.id ? 'border-rose-400 scale-95 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'border-transparent opacity-80 hover:opacity-100 hover:scale-[0.98]'
-                  }`}
-                >
-                  <img src={wp.url} alt={wp.name} className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-black/30 flex items-end p-2">
-                    <span className="text-[10px] font-bold text-white text-left leading-tight drop-shadow-md">
-                      {wp.name}
-                    </span>
-                  </div>
-                  <div 
-                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-zinc-300 hover:text-rose-400 hover:bg-black/80 transition-colors"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmConfig({
-                        isOpen: true,
-                        title: 'Xóa ảnh nền',
-                        message: 'Bạn có chắc chắn muốn xóa ảnh nền này không?',
-                        isDanger: true,
-                        onConfirm: () => {
-                          deleteCustomWallpaper(wp.id);
-                          setConfirmConfig({ isOpen: false });
-                        }
-                      });
-                    }}
-                  >
-                    <span className="text-xs">✕</span>
-                  </div>
-                </button>
-              );
-            })}
+      {/* ─── THEME & WALLPAPER (COLLAPSED BY DEFAULT) ───────────────── */}
+      <section className="glass-panel p-3.5 sm:p-4 rounded-[28px] border border-white/10 shadow-lg transition-all">
+        <button
+          onClick={() => setIsThemeOpen(prev => !prev)}
+          className="w-full flex items-center justify-between text-left group"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400 group-hover:bg-rose-500/30 transition-colors">
+              <Palette size={16} />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-white group-hover:text-rose-300 transition-colors flex items-center gap-1.5">
+                <span>Tùy chỉnh giao diện (Theme & Hình nền)</span>
+              </h3>
+              <p className="text-[10px] text-zinc-400">
+                Đang dùng: <span className="text-rose-300 font-bold">{THEMES.find(t => t.id === themeId)?.name || 'Mặc định'}</span>
+                {wallpaper ? ' · Nền riêng ✨' : ''}
+              </p>
+            </div>
           </div>
-        </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[10px] font-bold text-zinc-400 group-hover:text-white transition-colors">
+              {isThemeOpen ? 'Thu gọn' : 'Mở rộng'}
+            </span>
+            <ChevronDown 
+              size={15} 
+              className={`text-zinc-400 group-hover:text-white transition-transform duration-300 ${
+                isThemeOpen ? 'rotate-180' : ''
+              }`} 
+            />
+          </div>
+        </button>
+
+        {isThemeOpen && (
+          <div className="mt-4 pt-3 border-t border-white/5 space-y-4 animate-fadeIn">
+            {/* THẾ GIỚI GIAO DIỆN (THEMES) */}
+            <div>
+              <h4 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest mb-2.5">Thế giới giao diện (Theme)</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {THEMES.map(t => {
+                  const isActive = themeId === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        setThemeId(t.id);
+                        setWallpaper(null);
+                      }}
+                      className={`relative overflow-hidden rounded-2xl p-3 text-left transition-all group ${
+                        isActive 
+                          ? 'border-2 border-white/30 scale-[1.02] shadow-lg ring-2 ring-white/10' 
+                          : 'border border-white/5 bg-white/5 hover:bg-white/10 active:scale-95'
+                      }`}
+                    >
+                      <div className={`absolute inset-0 bg-gradient-to-r ${t.color} opacity-20 group-hover:opacity-30 transition-opacity`} />
+                      {isActive && <div className={`absolute inset-0 bg-gradient-to-r ${t.color} opacity-30`} />}
+                      
+                      <div className="relative z-10 flex flex-col gap-1">
+                        <span className="text-xl">{t.emoji}</span>
+                        <div className={`font-black text-[11px] ${isActive ? 'text-white drop-shadow-md' : 'text-zinc-300'}`}>
+                          {t.name}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* CUSTOM BACKGROUND */}
+            <div>
+              <h4 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest mb-2.5 flex items-center justify-between">
+                <span>Tùy chỉnh nền cá nhân</span>
+                <span className="text-[9px] lowercase opacity-70 font-normal">(Chỉ dùng ảnh bạn tải lên)</span>
+              </h4>
+              <input 
+                type="file" 
+                ref={wpFileInputRef} 
+                accept="image/*" 
+                onChange={handleWpUpload} 
+                className="hidden" 
+              />
+              <div className="grid grid-cols-2 gap-2">
+                {/* Upload Button */}
+                <button
+                  onClick={() => wpFileInputRef.current?.click()}
+                  className="relative rounded-xl h-24 overflow-hidden border-2 border-dashed border-rose-400/50 flex flex-col items-center justify-center text-rose-300 hover:bg-rose-500/10 hover:border-rose-400 transition-all active:scale-95"
+                >
+                  <Camera size={20} className="mb-1" />
+                  <span className="text-[10px] font-bold">Thêm ảnh của bạn</span>
+                </button>
+
+                {/* User Custom */}
+                {customWallpapers.map(wp => {
+                  return (
+                    <button
+                      key={wp.id}
+                      onClick={() => setWallpaper(wp.id)}
+                      className={`relative rounded-xl h-24 overflow-hidden border-2 transition-all ${
+                        wallpaper === wp.id ? 'border-rose-400 scale-95 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'border-transparent opacity-80 hover:opacity-100 hover:scale-[0.98]'
+                      }`}
+                    >
+                      <img src={wp.url} alt={wp.name} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/30 flex items-end p-2">
+                        <span className="text-[10px] font-bold text-white text-left leading-tight drop-shadow-md">
+                          {wp.name}
+                        </span>
+                      </div>
+                      <div 
+                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-zinc-300 hover:text-rose-400 hover:bg-black/80 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmConfig({
+                            isOpen: true,
+                            title: 'Xóa ảnh nền',
+                            message: 'Bạn có chắc chắn muốn xóa ảnh nền này không?',
+                            isDanger: true,
+                            onConfirm: () => {
+                              deleteCustomWallpaper(wp.id);
+                              setConfirmConfig({ isOpen: false });
+                            }
+                          });
+                        }}
+                      >
+                        <span className="text-xs">✕</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       <ConfirmModal 

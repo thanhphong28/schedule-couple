@@ -8,7 +8,9 @@ export default function WeightGoalCard({
   profile,
   weightLogs = [],
   onLogWeight,
-  onOpenWizard
+  onOpenWizard,
+  isReadOnly = false,
+  personName = 'Bạn'
 }) {
   const [showLogModal, setShowLogModal] = useState(false);
   const [newWeight, setNewWeight] = useState('');
@@ -42,19 +44,23 @@ export default function WeightGoalCard({
             <Scale size={18} className="text-white" />
           </div>
           <div>
-            <h3 className="text-sm font-black text-white">Cân Nặng & Mục Tiêu</h3>
-            <p className="text-[11px] text-zinc-400 font-medium">Theo dõi xu hướng sức khỏe dài hạn</p>
+            <h3 className="text-sm font-black text-white">Cân Nặng &amp; Mục Tiêu</h3>
+            <p className="text-[11px] text-zinc-400 font-medium">
+              {isReadOnly ? `Theo dõi cân nặng của ${personName}` : 'Theo dõi xu hướng sức khỏe dài hạn'}
+            </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowLogModal(true)}
-          className="px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1 active:scale-95"
-        >
-          <Plus size={13} />
-          <span>Ghi cân</span>
-        </button>
+        {!isReadOnly && (
+          <button
+            type="button"
+            onClick={() => setShowLogModal(true)}
+            className="px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1 active:scale-95"
+          >
+            <Plus size={13} />
+            <span>Ghi cân</span>
+          </button>
+        )}
       </div>
 
       {/* Main Metric Numbers */}
@@ -117,14 +123,18 @@ export default function WeightGoalCard({
         </div>
       ) : (
         <div className="p-4 bg-zinc-900/40 rounded-2xl border border-dashed border-zinc-700 text-center mb-3">
-          <p className="text-xs text-zinc-400 mb-2">Chưa có thông tin cân nặng của bạn</p>
-          <button
-            type="button"
-            onClick={onOpenWizard}
-            className="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl text-xs font-bold transition-all"
-          >
-            Thiết lập hồ sơ sức khỏe
-          </button>
+          <p className="text-xs text-zinc-400 mb-2">
+            {isReadOnly ? `${personName} chưa ghi nhận thông tin cân nặng` : 'Chưa có thông tin cân nặng của bạn'}
+          </p>
+          {!isReadOnly && (
+            <button
+              type="button"
+              onClick={onOpenWizard}
+              className="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl text-xs font-bold transition-all"
+            >
+              Thiết lập hồ sơ sức khỏe
+            </button>
+          )}
         </div>
       )}
 

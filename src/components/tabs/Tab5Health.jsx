@@ -9,11 +9,13 @@ import { useHealth } from '../../hooks/useHealth.js';
 import HydrationCouple from '../health/HydrationCouple.jsx';
 import CycleHealthCard from '../health/CycleHealthCard.jsx';
 import WeightGoalCard from '../health/WeightGoalCard.jsx';
+import BodySilhouetteCard from '../health/BodySilhouetteCard.jsx';
 import CalorieInsights from '../health/CalorieInsights.jsx';
 import HealthCharts from '../health/HealthCharts.jsx';
 import ConnectedDevices from '../health/ConnectedDevices.jsx';
 import CoupleHealthSharing from '../health/CoupleHealthSharing.jsx';
 import HealthProfileWizard from '../health/HealthProfileWizard.jsx';
+import RomanticDatePickerField from '../shared/RomanticDatePickerField.jsx';
 
 import {
   HeartPulse,
@@ -56,11 +58,11 @@ function Onboarding({ onComplete }) {
       <div className="space-y-4 mb-6">
         <div>
           <label className="block text-xs font-bold text-rose-300 mb-1">Ngày bắt đầu kỳ kinh gần nhất</label>
-          <input 
-            type="date" 
+          <RomanticDatePickerField 
             value={lastPeriod}
-            onChange={(e) => setLastPeriod(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-rose-500 transition-colors font-bold"
+            onChange={setLastPeriod}
+            title="Ngày bắt đầu kỳ kinh gần nhất"
+            placeholder="Chọn ngày bắt đầu kỳ kinh..."
           />
         </div>
         <div>
@@ -258,12 +260,32 @@ export default function Tab5Health() {
     partnerWaterLogs,
     weeklyWaterHistory,
     weightLogs,
+    partnerWeightLogs,
     myActivity,
+    partnerActivity,
     actions: healthActions
   } = useHealth();
 
   // Tab con điều hướng
   const [activeSubTab, setActiveSubTab] = useState('overview'); // 'overview' | 'cycle' | 'metrics'
+  const [metricsPerson, setMetricsPerson] = useState('me'); // 'me' | 'partner'
+
+  const myGender = user?.gender 
+    ? (user.gender === 'FEMALE' || user.gender === 'Nữ' || user.gender === 'female' ? 'female' : 'male') 
+    : (isFemale ? 'female' : 'male');
+  const partnerGender = partner?.gender 
+    ? (partner.gender === 'FEMALE' || partner.gender === 'Nữ' || partner.gender === 'female' ? 'female' : 'male') 
+    : (myGender === 'male' ? 'female' : 'male');
+
+  const isViewingMe = metricsPerson === 'me';
+  const activeProfile = isViewingMe ? myProfile : partnerProfile;
+  const activeGender = isViewingMe ? myGender : partnerGender;
+  const activeWeightLogs = isViewingMe ? weightLogs : (partnerWeightLogs || []);
+  const activeActivity = isViewingMe ? myActivity : partnerActivity;
+  const activeName = isViewingMe 
+    ? (user?.display_name || user?.full_name || 'Bạn') 
+    : (partner?.display_name || partner?.full_name || 'Người yêu');
+
   const [selectedDateStr, setSelectedDateStr] = useState(() => new Date().toISOString().split('T')[0]);
   const [showWizard, setShowWizard] = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
@@ -389,7 +411,10 @@ export default function Tab5Health() {
           {/* C. Đồng Hồ Thông Minh (Ở dưới cùng) */}
           <ConnectedDevices
             myActivity={myActivity}
+            partnerActivity={partnerActivity}
+            partner={partner}
             onSyncActivity={healthActions.logActivity}
+            onSendCheer={healthActions.sendCheer}
           />
         </div>
       )}
@@ -628,26 +653,74 @@ export default function Tab5Health() {
 
       {/* TAB 3: CHỈ SỐ CƠ THỂ & XU HƯỚNG (METRICS & TRENDS) */}
       {activeSubTab === 'metrics' && (
-        <div className="space-y-4 animate-fade-in">
+        <div className="space-y-4 animate-fade-in pb-32">
+          {/* Segmented Switcher chuyển đổi xem 2 người trong cặp đôi */}
+          <div className="flex p-1.5 bg-zinc-900/90 rounded-2xl border border-white/10 shadow-lg">
+            <button
+              type="button"
+              onClick={() => setMetricsPerson('me')}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+                isViewingMe
+                  ? (myGender === 'male'
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/25'
+                      : 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-500/25')
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <span className="text-sm">{myGender === 'male' ? '👦' : '👧'}</span>
+              <span className="truncate">{user?.display_name || user?.full_name || 'Tôi'} ({myGender === 'male' ? 'Nam' : 'Nữ'})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMetricsPerson('partner')}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+                !isViewingMe
+                  ? (partnerGender === 'male'
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/25'
+                      : 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-500/25')
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <span className="text-sm">{partnerGender === 'male' ? '👦' : '👧'}</span>
+              <span className="truncate">{partner?.display_name || partner?.full_name || 'Đối phương'} ({partnerGender === 'male' ? 'Nam' : 'Nữ'})</span>
+            </button>
+          </div>
+
+          {/* Mô phỏng khung cơ thể người 3D sinh học theo Chiều cao & Cân nặng */}
+          <BodySilhouetteCard
+            profile={activeProfile}
+            gender={activeGender}
+            isMe={isViewingMe}
+            name={activeName}
+            partner={partner}
+            onUpdateProfile={healthActions.updateProfile}
+            onOpenWizard={() => setShowWizard(true)}
+            onSendCheer={healthActions.sendCheer}
+            onLogWeight={healthActions.logWeight}
+          />
+
           {/* Card Cân nặng & Mục tiêu */}
           <WeightGoalCard
-            profile={myProfile}
-            weightLogs={weightLogs}
+            profile={activeProfile}
+            weightLogs={activeWeightLogs}
             onLogWeight={healthActions.logWeight}
             onOpenWizard={() => setShowWizard(true)}
+            isReadOnly={!isViewingMe}
+            personName={activeName}
           />
 
           {/* Phân tích Calo, BMR & TDEE */}
           <CalorieInsights
-            profile={myProfile}
-            userGender={user?.gender}
-            activityData={myActivity}
+            profile={activeProfile}
+            userGender={activeGender}
+            activityData={activeActivity}
           />
 
           {/* Biểu đồ xu hướng từ dữ liệu thật */}
           <HealthCharts
             weeklyWaterHistory={weeklyWaterHistory}
-            weightLogs={weightLogs}
+            weightLogs={activeWeightLogs}
             myWaterGoal={myWaterGoal}
           />
         </div>

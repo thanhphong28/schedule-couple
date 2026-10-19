@@ -630,6 +630,16 @@ body {
   animation: float-badge-up 1.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* 🤖 BIO-SCANNER LASER SWEEP */
+@keyframes laser-scanner {
+  0% { top: 5%; opacity: 0.35; }
+  50% { top: 92%; opacity: 0.95; }
+  100% { top: 5%; opacity: 0.35; }
+}
+.animate-laser-scan {
+  animation: laser-scanner 3.2s ease-in-out infinite;
+}
+
 /* === COUPLE LIVE MAP TILE & POPUP STYLING === */
 .romantic-dark-tiles .leaflet-tile {
   filter: brightness(0.6) invert(1) contrast(1.5) hue-rotate(200deg) saturate(0.35) brightness(0.85);
@@ -656,11 +666,31 @@ body {
 .custom-my-location-marker,
 .custom-partner-location-marker,
 .custom-saved-place-pin,
+.custom-couple-distance-badge-icon,
 .leaflet-div-icon {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
 }
+
+/* Touch & Gesture Styling for Smooth Google Maps Experience */
+.leaflet-container {
+  touch-action: none !important;
+  -webkit-touch-callout: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.couple-bridge-label-wrap {
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 4px 12px rgba(244, 63, 94, 0.4));
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.couple-bridge-label-wrap:hover {
+  transform: translate(-50%, -50%) scale(1.06);
+}
+
 
 
 

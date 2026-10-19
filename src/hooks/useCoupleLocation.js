@@ -568,6 +568,42 @@ export function useCoupleLocation() {
         payload: updatedLoc
       });
     }
+
+    // Gửi thông báo tức thời tới ứng dụng của người yêu (bất kể đang ở tab nào)
+    if (couple?.id && user?.id && partner?.id && isSupabaseReady) {
+      const notifPayload = {
+        id: 'status-' + Date.now(),
+        couple_id: couple.id,
+        sender_id: user.id,
+        sender_name: user.display_name || user.full_name || 'Người ấy',
+        receiver_id: partner.id,
+        cheer_type: 'status_message',
+        message: statusText,
+        created_at: new Date().toISOString()
+      };
+
+      try {
+        // Broadcast qua kênh thông báo toàn cục
+        supabase.channel(`couple_notifications_${couple.id}`).send({
+          type: 'broadcast',
+          event: 'new_cheer',
+          payload: notifPayload
+        }).catch(err => console.warn('Broadcast status notice error:', err));
+
+        // Lưu vào couple_cheers
+        supabase.from('couple_cheers').insert([{
+          couple_id: couple.id,
+          sender_id: user.id,
+          receiver_id: partner.id,
+          cheer_type: 'status_message',
+          message: statusText
+        }]).then(({ error }) => {
+          if (error) console.warn('Lỗi ghi couple_cheers status:', error);
+        });
+      } catch (err) {
+        console.warn('Lỗi gửi thông báo trạng thái:', err);
+      }
+    }
   };
 
   return {

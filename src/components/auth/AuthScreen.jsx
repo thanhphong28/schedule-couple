@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { Heart, Sparkles, User, Lock, Tag, Users, CheckCircle } from 'lucide-react';
+import RomanticDatePickerField from '../shared/RomanticDatePickerField.jsx';
 
 export default function AuthScreen() {
   const { login, register } = useAuth();
@@ -134,13 +135,12 @@ export default function AuthScreen() {
                   />
                 </div>
 
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">📅</span>
-                  <input 
-                    type="date" 
-                    className="input-romantic pl-11"
+                <div>
+                  <RomanticDatePickerField 
                     value={dob}
-                    onChange={(e) => setDob(e.target.value)}
+                    onChange={setDob}
+                    title="Chọn Ngày Sinh Nhật Của Bạn"
+                    placeholder="Chọn ngày sinh nhật..."
                   />
                 </div>
 

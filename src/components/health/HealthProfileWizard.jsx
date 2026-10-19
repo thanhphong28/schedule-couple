@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { UserCheck, ArrowRight, ArrowLeft, Check, Sparkles, X, Target, Droplets, Activity } from 'lucide-react';
 import { estimateRecommendedWater, ACTIVITY_MULTIPLIERS } from '../../services/healthPersonalization.js';
+import RomanticDatePickerField from '../shared/RomanticDatePickerField.jsx';
 
 export default function HealthProfileWizard({
   isOpen,
@@ -106,11 +107,11 @@ export default function HealthProfileWizard({
               <label className="block text-xs font-bold text-zinc-300 mb-1.5">
                 Ngày sinh (để ước tính độ tuổi & BMR)
               </label>
-              <input
-                type="date"
+              <RomanticDatePickerField
                 value={birthDate}
-                onChange={(e) => setBirthDate(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700/80 rounded-2xl px-4 py-3 text-white text-sm focus:border-emerald-400 focus:outline-none font-bold"
+                onChange={setBirthDate}
+                title="Chọn Ngày Sinh Của Bạn"
+                placeholder="Chọn ngày sinh..."
               />
               <p className="text-[10px] text-zinc-500 mt-1">
                 Thông tin này hoàn toàn riêng tư và không bắt buộc.

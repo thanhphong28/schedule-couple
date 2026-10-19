@@ -66,7 +66,7 @@ function BottomNav() {
 }
 
 function InAppNotificationBanner() {
-  const { activeNotification, dismissNotification, toggleTask } = useApp();
+  const { activeNotification, dismissNotification, toggleTask, quickLogWater } = useApp();
 
   if (!activeNotification) return null;
 
@@ -74,11 +74,13 @@ function InAppNotificationBanner() {
     <div className="fixed top-3 left-3 right-3 z-[99999] max-w-md mx-auto pointer-events-auto animate-slide-down">
       <div className="glass-panel border-2 border-rose-400/50 bg-zinc-950/95 shadow-[0_16px_40px_rgba(244,63,94,0.4)] rounded-2xl p-3.5 flex items-start gap-3 backdrop-blur-xl">
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-xl flex-shrink-0 shadow-md ${
-          activeNotification.isDue 
+          activeNotification.actionType === 'drink_water'
+            ? 'bg-gradient-to-tr from-cyan-500 to-blue-600 shadow-cyan-500/30 animate-bounce'
+            : activeNotification.isDue 
             ? 'bg-gradient-to-tr from-emerald-500 to-teal-500 shadow-emerald-500/30 animate-bounce' 
             : 'bg-gradient-to-tr from-rose-500 to-pink-500 shadow-rose-500/30 animate-pulse'
         }`}>
-          {activeNotification.isDue ? '⏰' : '⏳'}
+          {activeNotification.icon || (activeNotification.isDue ? '⏰' : '⏳')}
         </div>
         
         <div className="flex-1 min-w-0">
@@ -99,7 +101,16 @@ function InAppNotificationBanner() {
             {activeNotification.body}
           </p>
 
-          <div className="mt-2.5 flex items-center gap-2">
+          <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+            {activeNotification.actionType === 'drink_water' && (
+              <button
+                type="button"
+                onClick={() => quickLogWater(250)}
+                className="px-3 py-1.5 rounded-xl text-[11px] font-black bg-cyan-500 hover:bg-cyan-600 text-white shadow-lg shadow-cyan-500/30 transition-all active:scale-95 flex items-center gap-1"
+              >
+                💧 Uống 250ml ngay
+              </button>
+            )}
             {activeNotification.taskId && activeNotification.isDue && (
               <button
                 type="button"
@@ -132,21 +143,30 @@ function AppContent() {
   const { activeTab, wallpaper, WALLPAPERS } = useApp();
   const currentWp = WALLPAPERS?.find(w => w.id === wallpaper) || WALLPAPERS?.[0];
   const isAurora = !currentWp || currentWp.url === 'aurora';
+  const isLocationTab = activeTab === 5;
 
   return (
-    <div className="min-h-[100dvh] flex flex-col relative text-zinc-100 overflow-x-hidden">
+    <div className={`min-h-[100dvh] flex flex-col relative text-zinc-100 ${
+      isLocationTab ? 'h-[100dvh] overflow-hidden' : 'overflow-x-hidden'
+    }`}>
       {/* 0. Real-time In-App Floating Notification Banner */}
       <InAppNotificationBanner />
 
       {/* GLOBAL THEME ENGINE (Background + Ambient Animations) */}
-      <ThemeSystem />
+      {!isLocationTab && <ThemeSystem />}
 
-      <div className="relative z-10 flex-1 flex flex-col w-full max-w-md md:max-w-xl mx-auto px-0 sm:px-2">
+      <div className={`relative z-10 flex-1 flex flex-col w-full mx-auto ${
+        isLocationTab 
+          ? 'h-[100dvh] max-w-none p-0 overflow-hidden' 
+          : 'max-w-md md:max-w-xl px-0 sm:px-2'
+      }`}>
         <WelcomePopup />
         <Celebration />
-        <Header />
+        {!isLocationTab && <Header />}
 
-        <main className="flex-1 w-full pb-28 pt-1">
+        <main className={`flex-1 w-full ${
+          isLocationTab ? 'h-full p-0 pb-0 overflow-hidden' : 'pb-28 pt-1'
+        }`}>
           {activeTab === 0 && <Tab1Today />}
           {activeTab === 5 && <TabLocation />}
           {(activeTab === 2 || activeTab === 1) && <Tab3Dashboard />}

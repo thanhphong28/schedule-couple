@@ -271,3 +271,195 @@ export function getContextualHealthInsights({
       : 'Uống nhiều nước trái cây và cùng nhau ăn uống lành mạnh.'
   };
 }
+
+/**
+ * TÍNH TOÁN PHÁC ĐỒ CÁ NHÂN HÓA 100% THEO CHỈ SỐ THỰC TẾ
+ * Không hardcode bất kỳ chỉ số nào:
+ * - BMR & TDEE tính theo công thức Mifflin-St Jeor
+ * - Mức thâm hụt / thặng dư calo tùy biến theo độ chênh lệch cân nặng và giới tính
+ * - Lượng nước tính theo cân nặng thực tế (38ml/kg)
+ * - Lượng đạm protein tính theo giới tính và cân nặng (Nam: 1.8g/kg, Nữ: 1.5g/kg)
+ * - Bước chân điều chỉnh theo BMI (thừa cân nhiều -> cardio ít va đập để bảo vệ gối)
+ * - Các giai đoạn (Phases) tự động phân chia theo độ dài thời gian thực tế
+ */
+export function generatePersonalizedRoadmap({
+  currentWeight,
+  height,
+  targetWeight,
+  gender = 'male',
+  birthDate = null,
+  activityLevel = 'moderate',
+  profile = {}
+}) {
+  const isFemale = gender === 'FEMALE' || gender === 'Nữ' || gender === 'female';
+  const weightNum = parseFloat(currentWeight) || (isFemale ? 50 : 65);
+  const heightNum = parseFloat(height) || (isFemale ? 158 : 170);
+  
+  // Tính tuổi
+  let age = 25;
+  const bDate = birthDate || profile?.birth_date;
+  if (bDate) {
+    const diff = new Date().getFullYear() - new Date(bDate).getFullYear();
+    if (diff >= 12 && diff <= 90) age = diff;
+  }
+
+  // Chuẩn BMI Châu Á (WHO/WPRO)
+  const hM = heightNum / 100;
+  const bmi = parseFloat((weightNum / (hM * hM)).toFixed(1));
+  
+  const minIdeal = Math.round(18.5 * (hM ** 2) * 10) / 10;
+  const maxIdeal = Math.round(22.9 * (hM ** 2) * 10) / 10;
+  const optimalIdeal = Math.round(21.2 * (hM ** 2) * 10) / 10;
+
+  // Cân nặng mục tiêu
+  const effectiveTarget = targetWeight ? parseFloat(targetWeight) : optimalIdeal;
+  const rawDiff = Math.round((weightNum - effectiveTarget) * 10) / 10;
+  const kgGap = Math.abs(rawDiff);
+
+  const isLosing = rawDiff > 0.3;
+  const isGaining = rawDiff < -0.3;
+  const isMaintaining = !isLosing && !isGaining;
+
+  // BMR & TDEE
+  const bmr = calculateBMR(weightNum, heightNum, age, gender) || (isFemale ? 1250 : 1550);
+  const tdee = calculateTDEE(bmr, activityLevel) || Math.round(bmr * 1.375);
+
+  // Thâm hụt / Thặng dư calo động
+  let deficitKcal = 0;
+  let safeRate = 0.5;
+  let rateLabel = '0.5 kg / tuần';
+
+  if (isLosing) {
+    if (kgGap <= 2.5) {
+      // Giảm ít: chỉ cần thâm hụt nhẹ để không mất cơ
+      deficitKcal = Math.round(Math.min(300, tdee * 0.12));
+      safeRate = 0.3;
+      rateLabel = '0.3 kg / tuần (Siết nhẹ)';
+    } else if (kgGap <= 6) {
+      // Giảm vừa
+      deficitKcal = Math.round(Math.min(420, tdee * 0.18));
+      safeRate = 0.45;
+      rateLabel = '0.45 kg / tuần';
+    } else {
+      // Giảm nhiều
+      deficitKcal = Math.round(Math.min(550, tdee * 0.22));
+      safeRate = 0.5;
+      rateLabel = '0.5 kg / tuần (Chuẩn Y Khoa)';
+    }
+
+    // Đảm bảo calo nạp không bao giờ rớt xuống dưới BMR (đặc biệt an toàn cho nữ)
+    const floorLimit = isFemale ? Math.max(1200, bmr) : Math.max(1400, bmr);
+    if (tdee - deficitKcal < floorLimit) {
+      deficitKcal = Math.max(200, tdee - floorLimit);
+    }
+  } else if (isGaining) {
+    deficitKcal = -Math.round(Math.min(400, tdee * 0.16)); // Thặng dư
+    safeRate = 0.35;
+    rateLabel = '0.35 kg / tuần (Tăng cơ nạc)';
+  } else {
+    deficitKcal = 0;
+    safeRate = 0;
+    rateLabel = 'Duy trì cân bằng';
+  }
+
+  // Thời gian hoàn thành
+  const weeksNeeded = isMaintaining ? 0 : Math.max(1, Math.ceil(kgGap / safeRate));
+  const monthsNeeded = isMaintaining ? 0 : Math.round((weeksNeeded / 4.2) * 10) / 10;
+
+  // Nhu cầu nước (38ml / kg + bù đắp vận động)
+  const waterTargetMl = estimateRecommendedWater(weightNum, activityLevel);
+
+  // Bước chân & Vận động theo BMI & Thể trạng
+  let dailySteps = 8000;
+  let stepAdvice = '';
+  if (isLosing) {
+    if (bmi >= 27) {
+      dailySteps = 7500;
+      stepAdvice = 'Đi bộ dốc (Incline walk), đạp xe hoặc bơi lội (tránh chạy va chạm mạnh gây đau khớp gối)';
+    } else {
+      dailySteps = 9000;
+      stepAdvice = '35-45 phút đi bộ nhanh hoặc cardio ngắt quãng (HIIT) kết hợp bài tập toàn thân';
+    }
+  } else if (isGaining) {
+    dailySteps = 6500;
+    stepAdvice = 'Tập trung kháng lực tăng cơ (Squat, Bench press, Deadlift), không cardio quá nhiều';
+  } else {
+    dailySteps = 8000;
+    stepAdvice = 'Vận động thể thao thoải mái 30 phút mỗi ngày duy trì sức bền tim mạch';
+  }
+
+  // Đạm & Dinh dưỡng cá nhân hóa
+  const proteinMultiplier = isFemale ? 1.5 : 1.8;
+  const targetProteinGrams = Math.round(weightNum * proteinMultiplier);
+
+  // Phân chia các giai đoạn (Phases) linh hoạt dựa trên thời gian thực tế
+  let phases = [];
+  if (isLosing) {
+    if (weeksNeeded <= 4) {
+      // Sprint ngắn 1-4 tuần
+      phases = [
+        { phase: `Tuần 1 - 2`, title: 'Cắt giảm đường & Xả nước tích', detail: 'Hạn chế gia vị mặn, đồ ngọt và ăn vặt sau 20h. Cân nặng sẽ giảm 1-1.5kg đầu tiên nhờ thanh lọc.' },
+        { phase: `Tuần 3 - ${weeksNeeded}`, title: 'Siết mỡ vòng eo & Chạm đích', detail: `Duy trì calo ${tdee - deficitKcal} kcal/ngày, nạp đủ ${targetProteinGrams}g đạm để cơ bụng săn chắc.` },
+        { phase: 'Về đích', title: 'Khóa cân nặng ổn định', detail: 'Tăng dần calo về mức cân bằng TDEE để giữ vóc dáng thon gọn bền vững.' }
+      ];
+    } else if (weeksNeeded <= 12) {
+      // Trung hạn 5-12 tuần
+      const midWeek = Math.round(weeksNeeded / 2);
+      phases = [
+        { phase: `Tuần 1 - 3`, title: 'Khởi động & Tạo đà chuyển hóa', detail: 'Thích nghi với việc cắt giảm 1 chén cơm/bữa, uống đủ nước trước ăn để bao tử quen dần.' },
+        { phase: `Tuần 4 - ${midWeek}`, title: 'Đốt mỡ nội tạng & Tăng cơ', detail: `Tập kháng lực 3-4 buổi/tuần, đạt ${dailySteps.toLocaleString()} bước chân/ngày để đốt mỡ sâu.` },
+        { phase: `Tuần ${midWeek + 1} - ${weeksNeeded}`, title: 'Siết nét vóc dáng & Về đích', detail: `Mục tiêu chạm mốc ${effectiveTarget}kg. Tiếp tục giữ chế độ ăn sạch giàu protein.` },
+        { phase: 'Duy trì dài hạn', title: 'Tự tin với vóc dáng mới', detail: 'Cơ thể nhẹ nhõm, thiết lập thói quen ăn uống trực giác không lo tăng cân lại.' }
+      ];
+    } else {
+      // Dài hạn > 12 tuần (Chuyển đổi lớn)
+      const p1 = Math.round(weeksNeeded * 0.3);
+      const p2 = Math.round(weeksNeeded * 0.65);
+      phases = [
+        { phase: `Tuần 1 - ${p1}`, title: 'Giai đoạn 1: Giảm tải áp lực khớp', detail: `Mục tiêu giảm 3-4kg đầu tiên giúp cơ thể nhẹ nhõm, bớt áp lực lên cột sống và khớp gối.` },
+        { phase: `Tuần ${p1 + 1} - ${p2}`, title: 'Giai đoạn 2: Đốt mỡ chuyên sâu & Diet Break', detail: `Đốt mỡ ổn định. Sau mỗi 6 tuần có 1 tuần xả thâm hụt (Diet Break) để reset hormone Leptin.` },
+        { phase: `Tuần ${p2 + 1} - ${weeksNeeded}`, title: 'Giai đoạn 3: Tăng cơ siết nét toàn thân', detail: `Bổ sung ${targetProteinGrams}g đạm/ngày, tập tạ định hình đường cong săn chắc, không chùng da.` },
+        { phase: 'Giai đoạn 4', title: 'Khóa điểm cân bằng mới (Set-Point)', detail: 'Giữ cân nặng ổn định tối thiểu 3 tháng để cơ thể ghi nhận đây là mốc cân vĩnh viễn.' }
+      ];
+    }
+  } else if (isGaining) {
+    phases = [
+      { phase: 'Tuần 1 - 2', title: 'Tăng khả năng hấp thu tiêu hóa', detail: 'Ăn đủ 3 bữa chính + 2 bữa phụ với sữa hạt, chuối bơ để bao tử hấp thu dưỡng chất tốt nhất.' },
+      { phase: `Tuần 3 - ${weeksNeeded}`, title: 'Tăng khối lượng cơ bắp nạc', detail: `Tập kháng lực kích thích cơ bắp phát triển, nạp ${targetProteinGrams}g đạm mỗi ngày.` },
+      { phase: 'Về đích', title: 'Thân hình đầy đặn & Khỏe khoắn', detail: `Đạt cân nặng mục tiêu ${effectiveTarget}kg với năng lượng tràn đầy.` }
+    ];
+  } else {
+    phases = [
+      { phase: 'Hàng ngày', title: 'Duy trì lối sống năng động', detail: 'Ăn uống đa dạng, uống đủ nước và giữ tinh thần vui tươi thoải mái.' },
+      { phase: 'Hàng tuần', title: 'Kiểm tra cân 1 lần', detail: 'Cân vào sáng sớm khi bụng rỗng để theo dõi sức khỏe ổn định.' }
+    ];
+  }
+
+  return {
+    bmi,
+    height: heightNum,
+    currentWeight: weightNum,
+    targetWeight: effectiveTarget,
+    idealRange: { min: minIdeal, max: maxIdeal, optimal: optimalIdeal },
+    kgGap,
+    isLosing,
+    isGaining,
+    isMaintaining,
+    weeksNeeded,
+    monthsNeeded,
+    safeRate,
+    safeRateText: rateLabel,
+    bmr,
+    tdee,
+    dailyCalorieTarget: tdee - deficitKcal,
+    deficitKcal,
+    waterTargetMl,
+    dailySteps,
+    stepAdvice,
+    targetProteinGrams,
+    genderNotice: isFemale 
+      ? 'Chế độ thiết kế tối ưu cho nữ: bảo vệ nội tiết tố, bổ sung chất béo tốt và sắt.'
+      : 'Chế độ thiết kế tối ưu cho nam: tăng cường đạm nạc phát triển khối cơ và sức mạnh.',
+    phases
+  };
+}

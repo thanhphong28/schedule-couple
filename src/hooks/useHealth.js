@@ -31,6 +31,7 @@ export function useHealth() {
 
   // 4. Lịch sử cân nặng
   const [weightLogs, setWeightLogs] = useState([]);
+  const [partnerWeightLogs, setPartnerWeightLogs] = useState([]);
 
   // 5. Hoạt động thể chất & Smartwatch
   const [myActivity, setMyActivity] = useState(null);
@@ -144,6 +145,16 @@ export function useHealth() {
             .limit(30);
           if (wLogs) setWeightLogs(wLogs);
 
+          if (partner?.id) {
+            const { data: partWLogs } = await supabase
+              .from('weight_logs')
+              .select('*')
+              .eq('user_id', partner.id)
+              .order('log_date', { ascending: false })
+              .limit(30);
+            if (partWLogs) setPartnerWeightLogs(partWLogs);
+          }
+
           // 7. Tải hoạt động hôm nay
           const { data: actLogs } = await supabase
             .from('activity_logs')
@@ -232,7 +243,7 @@ export function useHealth() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'health_profiles' }, () => {
         fetchHealthData();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'weight_logs', filter: `user_id=eq.${user.id}` }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'weight_logs' }, () => {
         fetchHealthData();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs' }, () => {
@@ -280,12 +291,29 @@ export function useHealth() {
       // Tự động gửi thông báo chúc mừng tới đối phương nếu có ghép đôi
       if (partner?.id && couple?.id && isSupabaseReady) {
         try {
+          const autoCongrats = {
+            id: 'auto-congrats-' + Date.now(),
+            couple_id: couple.id,
+            sender_id: user.id,
+            sender_name: user.display_name || user.full_name || 'Người ấy',
+            receiver_id: partner.id,
+            cheer_type: 'congrats',
+            message: `${user.display_name || user.full_name || 'Người ấy'} vừa xuất sắc uống đủ ${myWaterGoal}ml nước hôm nay rồi nè! 💧🎉`,
+            created_at: new Date().toISOString()
+          };
+
+          supabase.channel(`couple_notifications_${couple.id}`).send({
+            type: 'broadcast',
+            event: 'new_cheer',
+            payload: autoCongrats
+          }).catch(err => console.warn('Broadcast congrats error:', err));
+
           await supabase.from('couple_cheers').insert([{
             couple_id: couple.id,
             sender_id: user.id,
             receiver_id: partner.id,
             cheer_type: 'congrats',
-            message: `${user.display_name || user.full_name || 'Người ấy'} vừa xuất sắc uống đủ ${myWaterGoal}ml nước hôm nay rồi nè! 💧🎉`
+            message: autoCongrats.message
           }]);
         } catch (e) {
           console.warn('Không gửi được cheer:', e);
@@ -406,8 +434,8 @@ export function useHealth() {
     }
   };
 
-  // Ghi nhận hoạt động thể chất (Nhập tay, Huafit Q5 hoặc Import File)
-  const logActivity = async ({ steps = 0, activeMinutes = 0, caloriesBurned = 0, heartRateAvg = null, sleepMinutes = null, source = 'manual' }) => {
+  // Ghi nhận hoạt động thể chất (Smartwatch, Đồng bộ tự động hoặc Nhập tay)
+  const logActivity = async ({ steps = 0, activeMinutes = 0, caloriesBurned = 0, heartRateAvg = null, sleepMinutes = null, source = 'manual', notify = false }) => {
     if (!user?.id) return;
 
     const activityPayload = {
@@ -418,13 +446,16 @@ export function useHealth() {
       calories_burned: parseInt(caloriesBurned, 10) || 0,
       heart_rate_avg: heartRateAvg ? parseInt(heartRateAvg, 10) : null,
       sleep_minutes: sleepMinutes ? parseInt(sleepMinutes, 10) : null,
-      source: source || 'manual',
+      source: source || 'smartwatch',
       synced_at: new Date().toISOString()
     };
 
     setMyActivity(activityPayload);
     localStorage.setItem(`sc_activity_${user.id}_${todayStr}`, JSON.stringify(activityPayload));
-    showToast(`Đã đồng bộ hoạt động từ [${source === 'huafit_q5' ? 'Huafit Q5' : source === 'apple_health' ? 'Apple Health' : 'Nhập tay'}]`, 'success');
+    
+    if (notify) {
+      showToast(`Đã đồng bộ hoạt động từ [${source}]`, 'success');
+    }
 
     if (isSupabaseReady) {
       try {
@@ -451,7 +482,26 @@ export function useHealth() {
     showToast(`Đã gửi lời nhắn yêu thương tới ${partner.display_name || partner.full_name}!`, 'success');
 
     if (isSupabaseReady) {
+      const cheerPayload = {
+        id: 'cheer-' + Date.now(),
+        couple_id: couple.id,
+        sender_id: user.id,
+        sender_name: user.display_name || user.full_name || 'Người yêu',
+        receiver_id: partner.id,
+        cheer_type: cheerType,
+        message: msg,
+        created_at: new Date().toISOString()
+      };
+
       try {
+        // Broadcast qua WebSocket realtime tức thời (độ trễ ~20ms)
+        supabase.channel(`couple_notifications_${couple.id}`).send({
+          type: 'broadcast',
+          event: 'new_cheer',
+          payload: cheerPayload
+        }).catch(err => console.warn('Broadcast cheer error:', err));
+
+        // Lưu vào DB để lưu vết và đồng bộ
         await supabase.from('couple_cheers').insert([{
           couple_id: couple.id,
           sender_id: user.id,
@@ -492,6 +542,7 @@ export function useHealth() {
     partnerProgressPercent,
     weeklyWaterHistory,
     weightLogs,
+    partnerWeightLogs,
     myActivity,
     partnerActivity,
     incomingCheers,

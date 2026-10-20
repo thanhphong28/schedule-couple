@@ -199,7 +199,7 @@ export async function getIpLocationFallback() {
         };
       }
     }
-  } catch (err) {
+  } catch {
     try {
       const res2 = await fetch('https://ipapi.co/json/');
       if (res2.ok) {
@@ -218,7 +218,6 @@ export async function getIpLocationFallback() {
     } catch {}
   }
 
-  // Tọa độ mặc định trung tâm TP.HCM nếu mọi kết nối IP đều không phản hồi
   return {
     latitude: 10.7769,
     longitude: 106.7009,
@@ -228,3 +227,49 @@ export async function getIpLocationFallback() {
     isIpFallback: true
   };
 }
+
+// ─── 10. TÍNH TOÁN QUẢNG ĐƯỜNG LỘ TRÌNH (KM) ───
+export function calculateTrailDistance(trail) {
+  if (!Array.isArray(trail) || trail.length < 2) return 0;
+  let totalMeters = 0;
+  for (let i = 1; i < trail.length; i++) {
+    const p1 = trail[i - 1];
+    const p2 = trail[i];
+    if (p1?.lat && p1?.lng && p2?.lat && p2?.lng) {
+      const d = calculateDistance(p1.lat, p1.lng, p2.lat, p2.lng);
+      if (d && d < 10000) { // Lọc các bước nhảy GPS lỗi > 10km
+        totalMeters += d;
+      }
+    }
+  }
+  return Number((totalMeters / 1000).toFixed(2)); // Trả về số km
+}
+
+// ─── 11. HỖ TRỢ TÍNH TOÁN TOẠ ĐỘ MẢNH BẢN ĐỒ ĐỂ LƯU OFFLINE (WEB MERCATOR) ───
+export function latLngToTile(lat, lon, zoom) {
+  const x = Math.floor(((lon + 180) / 360) * Math.pow(2, zoom));
+  const latRad = (lat * Math.PI) / 180;
+  const y = Math.floor(
+    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * Math.pow(2, zoom)
+  );
+  return { x, y, z: zoom };
+}
+
+export function generateTileUrlsForArea(lat, lon, zoomLevels = [14, 15, 16], radiusTiles = 1) {
+  if (!lat || !lon) return [];
+  const urls = [];
+  zoomLevels.forEach((z) => {
+    const center = latLngToTile(lat, lon, z);
+    for (let dx = -radiusTiles; dx <= radiusTiles; dx++) {
+      for (let dy = -radiusTiles; dy <= radiusTiles; dy++) {
+        const x = center.x + dx;
+        const y = center.y + dy;
+        const sub = Math.abs(x + y) % 4;
+        urls.push(`https://mt${sub}.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${z}`);
+        urls.push(`https://mt${sub}.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}`);
+      }
+    }
+  });
+  return Array.from(new Set(urls));
+}
+

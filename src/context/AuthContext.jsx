@@ -28,11 +28,14 @@ export function AuthProvider({ children }) {
   });
   const [isLoading, setIsLoading] = useState(true);
 
-  // Sync state to localStorage
+  // Sync state to localStorage (Bảo vệ chống QuotaExceededError khi avatar là ảnh base64 lớn)
   useEffect(() => {
     try {
       if (user) {
-        localStorage.setItem('sc_user', JSON.stringify(user));
+        const safeUser = user.avatar_url && user.avatar_url.length > 80000
+          ? { ...user, avatar_url: '' }
+          : user;
+        localStorage.setItem('sc_user', JSON.stringify(safeUser));
       } else {
         localStorage.removeItem('sc_user');
       }
@@ -42,12 +45,15 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('sc_couple');
       }
       if (partner) {
-        localStorage.setItem('sc_partner', JSON.stringify(partner));
+        const safePartner = partner.avatar_url && partner.avatar_url.length > 80000
+          ? { ...partner, avatar_url: '' }
+          : partner;
+        localStorage.setItem('sc_partner', JSON.stringify(safePartner));
       } else {
         localStorage.removeItem('sc_partner');
       }
     } catch (err) {
-      console.warn('localStorage full:', err);
+      console.warn('localStorage quota protection:', err);
     }
   }, [user, couple, partner]);
 

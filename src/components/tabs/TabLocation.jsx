@@ -17,7 +17,8 @@ import {
   Navigation, Heart, MapPin, Shield, Layers, 
   Send, Battery, BatteryCharging, AlertTriangle, 
   X, Plus, Trash2, ExternalLink, ChevronUp,
-  Route, Radio
+  Radio, Download, BatteryLow, 
+  WifiOff, Zap
 } from 'lucide-react';
 import { showToast } from '../shared/Toast.jsx';
 
@@ -68,7 +69,17 @@ export default function TabLocation() {
     partnerTrail,
     myTrail,
     showRouteTrail,
-    setShowRouteTrail
+    setShowRouteTrail,
+    locationMode,
+    setLocationMode,
+    activateLiveRoad,
+    deactivateLiveRoad,
+    liveRoadRemainingMins,
+    isStationary,
+    isOnline,
+    isLowBattery,
+    downloadOfflineMapArea,
+    todayStats
   } = useLocation();
 
   const mapContainerRef = useRef(null);
@@ -964,7 +975,7 @@ export default function TabLocation() {
       />
 
       {/* ─── 2. FLOATING TOP HEADER ─── */}
-      <div className="absolute top-0 left-0 right-0 z-20 px-3 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pointer-events-none flex flex-col gap-2 max-w-md mx-auto">
+      <div className="absolute top-0 left-0 right-0 z-20 px-3 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pointer-events-none flex flex-col gap-1.5 max-w-md mx-auto">
         <div className="flex items-center justify-between gap-2 w-full">
           {/* Badge Tên Tab & Trạng thái Live */}
           <div className="glass-panel px-3 py-2 rounded-2xl border border-white/15 shadow-xl backdrop-blur-xl pointer-events-auto flex items-center gap-2">
@@ -975,10 +986,12 @@ export default function TabLocation() {
               <h2 className="text-xs font-black text-white flex items-center gap-1.5 truncate">
                 <span>Couple Live Map</span>
                 <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
-                  isRealtimeConnected ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300'
+                  !isOnline 
+                    ? 'bg-amber-500/25 text-amber-300 border border-amber-500/30'
+                    : (isRealtimeConnected ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300')
                 }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isRealtimeConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-                  {isRealtimeConnected ? 'LIVE' : 'Đang kết nối'}
+                  <span className={`w-1.5 h-1.5 rounded-full ${!isOnline ? 'bg-amber-400' : (isRealtimeConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400')}`}></span>
+                  {!isOnline ? 'OFFLINE' : (isRealtimeConnected ? 'LIVE' : 'Đang kết nối')}
                 </span>
               </h2>
               <p className="text-[10px] text-zinc-400 font-medium truncate">
@@ -1011,17 +1024,57 @@ export default function TabLocation() {
               type="button"
               onClick={() => setShowSettingsModal(true)}
               className="p-2.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 shadow-lg backdrop-blur-md active:scale-95 transition-all"
-              title="Quyền riêng tư & Cài đặt"
+              title="Quyền riêng tư & Cài đặt định vị"
             >
               <Shield size={16} className={isSharingEnabled ? 'text-sky-400' : 'text-zinc-500'} />
             </button>
           </div>
         </div>
+
+        {/* Thanh chuyển đổi nhanh chế độ định vị thông minh & Tiết kiệm pin */}
+        <div className="flex items-center gap-1.5 pointer-events-auto overflow-x-auto no-scrollbar py-0.5">
+          {locationMode === 'live_road' ? (
+            <button
+              type="button"
+              onClick={() => deactivateLiveRoad('Đã chuyển sang chế độ Tiết kiệm pin 🍃')}
+              className="px-3 py-1 rounded-2xl bg-gradient-to-r from-rose-500/30 to-pink-500/30 border border-rose-500/60 text-rose-200 text-[10px] font-black flex items-center gap-1.5 shadow-lg shadow-rose-500/20 backdrop-blur-xl active:scale-95 transition-all flex-shrink-0"
+              title="Đang bật chế độ Đi đường Live. Bấm để tắt"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping"></span>
+              <span>Đi đường Live 🛵 ({liveRoadRemainingMins}p)</span>
+              <span className="text-[9px] bg-rose-500/40 text-rose-100 px-1.5 py-0.2 rounded-full font-bold ml-0.5">Tắt ✕</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => activateLiveRoad(45)}
+              className="px-3 py-1 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold flex items-center gap-1.5 backdrop-blur-xl shadow-md active:scale-95 transition-all flex-shrink-0"
+              title="Đang bật chế độ Tiết kiệm pin. Bấm để bật chế độ Đi đường Live 45 phút"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span>Tiết kiệm pin 🍃</span>
+              <span className="text-[9px] text-emerald-400/80 font-normal">· Bật Live 🛵</span>
+            </button>
+          )}
+
+          {!isOnline && (
+            <div className="px-2.5 py-1 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-[10px] font-bold flex items-center gap-1 backdrop-blur-xl flex-shrink-0">
+              <WifiOff size={11} className="text-amber-400" />
+              <span>Bản đồ ngoại tuyến ⚡</span>
+            </div>
+          )}
+
+          {isStationary && locationMode === 'battery_saver' && isOnline && (
+            <div className="px-2.5 py-1 rounded-2xl bg-zinc-900/80 border border-white/10 text-zinc-400 text-[10px] font-medium flex items-center gap-1 backdrop-blur-xl flex-shrink-0">
+              <span>🍃 Đang nghỉ</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ─── 3. BÁO LỖI GPS (NẾU CÓ) ─── */}
       {gpsStatus === 'denied' && (
-        <div className="absolute top-20 left-3 right-3 z-30 max-w-md mx-auto p-3.5 bg-amber-500/25 border border-amber-500/40 rounded-2xl flex flex-col gap-2 text-xs text-amber-200 backdrop-blur-xl shadow-2xl animate-fade-in pointer-events-auto">
+        <div className="absolute top-24 left-3 right-3 z-30 max-w-md mx-auto p-3.5 bg-amber-500/25 border border-amber-500/40 rounded-2xl flex flex-col gap-2 text-xs text-amber-200 backdrop-blur-xl shadow-2xl animate-fade-in pointer-events-auto">
           <div className="flex items-start justify-between gap-2.5">
             <div className="flex items-start gap-2.5">
               <AlertTriangle size={18} className="text-amber-400 flex-shrink-0 mt-0.5" />
@@ -1046,7 +1099,7 @@ export default function TabLocation() {
       )}
 
       {/* ─── 4. CÁC NÚT ĐIỀU KHIỂN NỔI BÊN PHẢI (FAB DOCK) ─── */}
-      <div className="absolute right-3 top-[calc(max(0.75rem,env(safe-area-inset-top,0.75rem))+56px)] z-20 flex flex-col gap-2 pointer-events-auto">
+      <div className="absolute right-3 top-[calc(max(0.75rem,env(safe-area-inset-top,0.75rem))+74px)] z-20 flex flex-col gap-2 pointer-events-auto">
         {/* Nút Đưa cả 2 vào khung hình */}
         <button
           type="button"
@@ -1079,24 +1132,18 @@ export default function TabLocation() {
           <Navigation size={18} className="group-hover:scale-110 transition-transform" />
         </button>
 
-        {/* Nút Bật/Tắt Lộ trình di chuyển (Route Trail) */}
+
+        {/* Nút Lưu bản đồ khu vực này Offline */}
         <button
           type="button"
-          onClick={() => {
-            const next = !showRouteTrail;
-            setShowRouteTrail(next);
-            showToast(next ? 'Đang hiển thị lộ trình di chuyển 🗺️' : 'Đã ẩn lộ trình', 'info');
-          }}
-          className={`p-2.5 rounded-2xl shadow-xl backdrop-blur-md active:scale-90 transition-all flex items-center justify-center border ${
-            showRouteTrail 
-              ? 'bg-rose-500/25 text-rose-300 border-rose-500/50 shadow-rose-500/20' 
-              : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-400 border-white/10'
-          }`}
-          title={showRouteTrail ? 'Đang bật vệt đường lộ trình di chuyển' : 'Bật hiển thị vệt đường đã đi'}
+          onClick={() => downloadOfflineMapArea(myLocation?.latitude, myLocation?.longitude)}
+          className="p-2.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-cyan-300 border border-cyan-500/30 shadow-xl backdrop-blur-md active:scale-90 transition-all flex items-center justify-center group"
+          title="Lưu bản đồ khu vực này để xem Offline khi mất mạng 🗺️"
         >
-          <Route size={18} />
+          <Download size={18} className="group-hover:scale-110 transition-transform" />
         </button>
       </div>
+
 
       {/* ─── 5. BOTTOM SHEET NỔI: THÔNG TIN CHI TIẾT & CHỈ ĐƯỜNG ─── */}
       <div className="absolute left-0 right-0 z-20 px-3 pointer-events-none max-w-md mx-auto bottom-[calc(76px+env(safe-area-inset-bottom,0px))]">
@@ -1294,6 +1341,24 @@ export default function TabLocation() {
               </div>
             )}
 
+            {/* Cảnh báo pin yếu của người yêu */}
+            {partnerLocation?.battery_level !== null && partnerLocation?.battery_level !== undefined && partnerLocation.battery_level <= 20 && !partnerLocation.is_charging && (
+              <div className="px-3 py-2 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center justify-between gap-2 shadow-sm">
+                <span className="flex items-center gap-1.5 truncate text-[11px]">
+                  <BatteryLow size={15} className="text-amber-400 flex-shrink-0 animate-pulse" />
+                  <span>Pin {partnerName} chỉ còn {partnerLocation.battery_level}% 🪫</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => sendQuickStatus('Nhớ sạc pin điện thoại nha người yêu ơi ⚡')}
+                  className="px-2.5 py-1 rounded-xl bg-amber-500/25 hover:bg-amber-500/40 text-amber-200 text-[10px] font-black active:scale-95 transition-all flex items-center gap-1"
+                >
+                  <Zap size={11} />
+                  <span>Nhắc sạc ⚡</span>
+                </button>
+              </div>
+            )}
+
             {/* Thẻ trạng thái di chuyển & Lộ trình */}
             <div className="grid grid-cols-2 gap-2 pt-0.5 text-xs">
               <div className="p-2 rounded-2xl bg-zinc-900/70 border border-white/5 flex flex-col">
@@ -1305,17 +1370,20 @@ export default function TabLocation() {
                         : '💑 Đang ở cùng bạn')
                     : (partnerLocation?.is_sharing === false 
                         ? 'Đã tạm dừng chia sẻ' 
-                        : formatSpeed(partnerLocation?.speed))}
+                        : (isStationary && locationMode === 'battery_saver' ? 'Đang đứng yên (Tiết kiệm pin 🍃)' : formatSpeed(partnerLocation?.speed)))}
                 </span>
               </div>
 
               <div className="p-2 rounded-2xl bg-zinc-900/70 border border-white/5 flex flex-col">
-                <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider mb-0.5">Lộ trình hôm nay</span>
+                <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider mb-0.5">Hôm nay</span>
                 <span className="font-bold text-rose-300 truncate text-[11px]">
-                  {partnerTrail && partnerTrail.length >= 2 ? `${partnerTrail.length} điểm đã đi qua 📍` : (isTogether ? 'Đang ở cùng nhau' : 'Chưa có vệt đường')}
+                  {todayStats?.partnerDistanceKm > 0 || todayStats?.myDistanceKm > 0
+                    ? `${todayStats.partnerDistanceKm || 0} km (${partnerName})`
+                    : 'Chưa có di chuyển'}
                 </span>
               </div>
             </div>
+
 
             {/* Nút gửi trạng thái nhanh cho người yêu */}
             <div className="pt-0.5">
@@ -1396,38 +1464,84 @@ export default function TabLocation() {
               </button>
             </div>
 
-            {/* Trạng thái định vị ngầm tự động */}
-            <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-emerald-500/30 flex items-center gap-3 mb-3.5">
-              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
-                <Radio size={16} className="animate-pulse" />
+            {/* Lựa chọn Chế độ Định vị thông minh */}
+            <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-white/10 space-y-2.5 mb-3.5">
+              <div className="text-xs font-bold text-white flex items-center justify-between">
+                <span>Chế độ định vị</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  locationMode === 'live_road' ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'
+                }`}>
+                  {locationMode === 'live_road' ? `Đi đường (${liveRoadRemainingMins}p)` : 'Tiết kiệm pin 🍃'}
+                </span>
               </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-emerald-300">Định vị ngầm tự động 100%</div>
-                <div className="text-[11px] text-zinc-400 mt-0.5 leading-snug">
-                  Tự động duy trì gửi tọa độ và vệt đường cho đối phương ngay cả khi khóa màn hình hay chuyển app khác (chuẩn như Life360 &amp; Google Maps).
-                </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => deactivateLiveRoad('Đã chuyển sang chế độ Tiết kiệm pin 🍃')}
+                  className={`p-2.5 rounded-xl text-left border transition-all ${
+                    locationMode === 'battery_saver'
+                      ? 'bg-emerald-500/20 border-emerald-500/50 text-white shadow-sm'
+                      : 'bg-zinc-800/40 border-transparent text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <div className="font-bold text-xs text-emerald-400 flex items-center gap-1">
+                    <span>🍃 Tiết kiệm pin</span>
+                  </div>
+                  <div className="text-[10px] text-zinc-400 mt-1 leading-snug">
+                    Tự ngủ khi đứng yên hoặc tắt màn hình. Tiết kiệm 90% pin.
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => activateLiveRoad(45)}
+                  className={`p-2.5 rounded-xl text-left border transition-all ${
+                    locationMode === 'live_road'
+                      ? 'bg-rose-500/20 border-rose-500/50 text-white shadow-sm'
+                      : 'bg-zinc-800/40 border-transparent text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <div className="font-bold text-xs text-rose-400 flex items-center gap-1">
+                    <span>🛵 Đi đường Live</span>
+                  </div>
+                  <div className="text-[10px] text-zinc-400 mt-1 leading-snug">
+                    Giữ GPS liên tục khi đi xe. Tự ngắt sau 45p hoặc khi về nhà.
+                  </div>
+                </button>
               </div>
+
+              {/* Nút lưu bản đồ offline */}
+              <button
+                type="button"
+                onClick={() => downloadOfflineMapArea(myLocation?.latitude, myLocation?.longitude)}
+                className="w-full py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-98"
+              >
+                <Download size={13} />
+                <span>Lưu bản đồ khu vực này để xem Offline 🗺️</span>
+              </button>
             </div>
 
             {/* Hướng dẫn tối ưu */}
             <div className="p-3.5 rounded-2xl bg-zinc-900/90 border border-white/10 text-xs text-zinc-300 space-y-2 mb-4 max-h-[30vh] overflow-y-auto no-scrollbar">
               <div className="font-bold flex items-center gap-1.5 text-amber-300 text-xs">
                 <span>💡</span>
-                <span>Tối ưu hoạt động ngầm trên điện thoại:</span>
+                <span>Tối ưu trải nghiệm như App Store / CH Play:</span>
               </div>
               
               <div className="space-y-1.5 text-[11px] text-zinc-300/95 leading-relaxed">
                 <p className="font-semibold text-white">1. Cài ứng dụng ra Màn hình chính (PWA):</p>
                 <p className="text-zinc-400 pl-3">
-                  • Mở trình duyệt Chrome/Safari &gt; bấm menu 3 chấm ⋮ &gt; chọn <em>"Thêm vào Màn hình chính"</em> (hoặc <em>"Cài đặt ứng dụng"</em>) để ứng dụng có quyền chạy nền độc lập như app cài từ App Store/CH Play.
+                  • Mở trình duyệt Chrome/Safari &gt; bấm menu 3 chấm ⋮ &gt; chọn <em>"Thêm vào Màn hình chính"</em> (hoặc <em>"Cài đặt ứng dụng"</em>) để ứng dụng chạy độc lập, mượt mà hơn.
                 </p>
 
-                <p className="font-semibold text-white pt-1">2. Tắt chế độ Tiết kiệm pin cho ứng dụng:</p>
+                <p className="font-semibold text-white pt-1">2. Xem bản đồ ngoại tuyến khi không có mạng:</p>
                 <p className="text-zinc-400 pl-3">
-                  • Vào Cài đặt máy &gt; Ứng dụng &gt; Chrome (hoặc Schedule Couple) &gt; Pin &gt; Chọn <strong>"Không hạn chế"</strong> (Unrestricted) để hệ điều hành không đóng ngầm.
+                  • Bản đồ tự động lưu vào bộ nhớ máy mỗi khi bạn lướt xem. Bấm nút <strong>Lưu bản đồ</strong> ở trên để xem trơn tru ngay cả khi tắt 4G/Wifi.
                 </p>
               </div>
             </div>
+
 
             <button
               type="button"
@@ -1549,6 +1663,9 @@ export default function TabLocation() {
           </div>
         </div>
       )}
+
+
     </div>
   );
 }
+

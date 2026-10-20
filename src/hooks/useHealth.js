@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, isSupabaseReady } from '../lib/supabase.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { showToast } from '../components/shared/Toast.jsx';
+import { estimateRecommendedWater } from '../services/healthPersonalization.js';
 
 // Format YYYY-MM-DD theo giờ địa phương (Việt Nam)
 export function getTodayDateStr() {
@@ -117,8 +118,32 @@ export function useHealth() {
     return partnerWaterLogs.reduce((sum, log) => sum + (parseInt(log.amount, 10) || 0), 0);
   }, [partnerWaterLogs]);
 
-  const myWaterGoal = myProfile?.daily_water_goal || 2000;
-  const partnerWaterGoal = partnerProfile?.daily_water_goal || 2000;
+  // Lượng nước mục tiêu: Ưu tiên daily_water_goal đã lưu, nếu chưa có thì tự động tính từ Cân nặng (BMI) & Mức độ vận động
+  const myWaterGoal = useMemo(() => {
+    if (myProfile?.daily_water_goal) return myProfile.daily_water_goal;
+    if (myProfile?.current_weight) {
+      return estimateRecommendedWater(
+        parseFloat(myProfile.current_weight),
+        myProfile.activity_level || 'moderate',
+        myActivity?.steps || 0,
+        myActivity?.calories_burned || 0
+      );
+    }
+    return 2000;
+  }, [myProfile?.daily_water_goal, myProfile?.current_weight, myProfile?.activity_level, myActivity?.steps, myActivity?.calories_burned]);
+
+  const partnerWaterGoal = useMemo(() => {
+    if (partnerProfile?.daily_water_goal) return partnerProfile.daily_water_goal;
+    if (partnerProfile?.current_weight) {
+      return estimateRecommendedWater(
+        parseFloat(partnerProfile.current_weight),
+        partnerProfile.activity_level || 'moderate',
+        partnerActivity?.steps || 0,
+        partnerActivity?.calories_burned || 0
+      );
+    }
+    return 2000;
+  }, [partnerProfile?.daily_water_goal, partnerProfile?.current_weight, partnerProfile?.activity_level, partnerActivity?.steps, partnerActivity?.calories_burned]);
 
   const myProgressPercent = Math.min(100, Math.round((myTodayWater / myWaterGoal) * 100));
   const partnerProgressPercent = Math.min(100, Math.round((partnerTodayWater / partnerWaterGoal) * 100));
@@ -439,10 +464,31 @@ export function useHealth() {
     }
   };
 
-  // Cập nhật hồ sơ sức khỏe
+  // Cập nhật hồ sơ sức khỏe (tự động đồng bộ mục tiêu nước nếu có cập nhật cân nặng)
   const updateProfile = async (fields, silent = false) => {
     if (!user?.id) return;
-    const updated = { ...(myProfile || {}), ...fields, user_id: user.id };
+
+    // Tự động đồng bộ mục tiêu nước nếu có cập nhật cân nặng mà chưa truyền daily_water_goal cụ thể
+    const newWeight = fields.current_weight !== undefined ? parseFloat(fields.current_weight) : parseFloat(myProfile?.current_weight);
+    const activityLvl = fields.activity_level || myProfile?.activity_level || 'moderate';
+    
+    let computedWaterGoal = fields.daily_water_goal;
+    if (!computedWaterGoal && newWeight && newWeight > 0) {
+      computedWaterGoal = estimateRecommendedWater(
+        newWeight,
+        activityLvl,
+        myActivity?.steps || 0,
+        myActivity?.calories_burned || 0
+      );
+    }
+
+    const updated = { 
+      ...(myProfile || {}), 
+      ...fields, 
+      ...(computedWaterGoal ? { daily_water_goal: computedWaterGoal } : {}),
+      user_id: user.id 
+    };
+
     setMyProfile(updated);
     localStorage.setItem(`sc_health_profile_${user.id}`, JSON.stringify(updated));
     if (!silent) {
@@ -459,7 +505,7 @@ export function useHealth() {
     }
   };
 
-  // Ghi nhận cân nặng mới
+  // Ghi nhận cân nặng mới (tự động tính lại BMI & mục tiêu nước chuẩn 35ml/kg)
   const logWeight = async (weight, note = '') => {
     const weightNum = parseFloat(weight);
     if (!user?.id || !weightNum || weightNum <= 0) return;
@@ -477,9 +523,22 @@ export function useHealth() {
     setWeightLogs(updatedLogs);
     localStorage.setItem(`sc_weights_${user.id}`, JSON.stringify(updatedLogs));
 
-    // Cập nhật cân nặng hiện tại trong profile (im lặng, không bắn toast trùng)
-    updateProfile({ current_weight: weightNum, weight_date: todayStr }, true);
-    showToast(`Đã lưu cân nặng: ${weightNum} kg`, 'success');
+    // Tính lại mục tiêu nước theo cân nặng mới
+    const newWaterGoal = estimateRecommendedWater(
+      weightNum,
+      myProfile?.activity_level || 'moderate',
+      myActivity?.steps || 0,
+      myActivity?.calories_burned || 0
+    );
+
+    // Cập nhật cân nặng hiện tại và mục tiêu nước trong profile
+    updateProfile({ 
+      current_weight: weightNum, 
+      weight_date: todayStr,
+      daily_water_goal: newWaterGoal
+    }, true);
+
+    showToast(`Đã lưu cân nặng: ${weightNum} kg. Mục tiêu nước: ${newWaterGoal.toLocaleString()} ml 💧`, 'success');
 
     if (isSupabaseReady) {
       try {

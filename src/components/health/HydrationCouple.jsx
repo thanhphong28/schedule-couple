@@ -76,12 +76,12 @@ export default function HydrationCouple({
         <div className="mb-3 p-3 bg-gradient-to-r from-sky-500/20 via-cyan-500/25 to-pink-500/20 border border-cyan-400/40 rounded-2xl flex items-center gap-2.5 animate-bounce shadow-md">
           <Sparkles className="text-cyan-300 flex-shrink-0" size={18} />
           <p className="text-xs text-cyan-100 font-bold leading-tight">
-            🎉 Tuyệt vời! Cả hai bạn đều đã nạp đủ 2L nước lọc hôm nay! Khỏe mạnh & Tươi trẻ 💙
+            🎉 Tuyệt vời! Cả hai bạn đều đã nạp đủ mục tiêu nước hôm nay! Khỏe mạnh &amp; Tươi trẻ 💙
           </p>
         </div>
       )}
 
-      {/* Thanh trạng thái chuẩn 2.000ml nước lọc */}
+      {/* Thanh trạng thái chuẩn nước lọc theo thể trạng */}
       <div className="mb-3 px-3 py-2 rounded-2xl bg-sky-500/10 border border-sky-400/15 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <span className="text-sm">💧</span>
@@ -89,7 +89,7 @@ export default function HydrationCouple({
           <span className="text-[11px] font-black text-white">{myTodayWater.toLocaleString()} / {myWaterGoal.toLocaleString()} ml</span>
         </div>
         <span className="text-[10px] text-sky-300 font-bold bg-sky-500/20 px-2 py-0.5 rounded-full border border-sky-400/30">
-          Tối thiểu 2L/ngày 🎯
+          {myProfile?.current_weight ? `Chuẩn thể trạng (${myProfile.current_weight}kg) 🎯` : 'Tối thiểu 2L/ngày 🎯'}
         </span>
       </div>
 

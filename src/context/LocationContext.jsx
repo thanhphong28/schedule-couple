@@ -1,6 +1,6 @@
 // context/LocationContext.jsx
 // Global Background Geolocation & Route Tracker Provider
-// Quản lý GPS toàn cục, chạy ngầm liên tục khi tắt màn hình (Live Road Mode), ghi nhận lộ trình di chuyển (Breadcrumbs)
+// Quản lý GPS toàn cục, Chế độ Tiết kiệm pin thông minh (Smart Battery Saver), Chế độ Đi đường Live (Live Road Mode) với bộ hẹn giờ tự tắt, Bộ lọc đứng yên (Stationary Filter) và Lưu bản đồ Offline (Offline Map Pre-caching)
 import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext.jsx';
 import { supabase, isSupabaseReady } from '../lib/supabase.js';
@@ -9,7 +9,9 @@ import {
   reverseGeocode, 
   getDeviceBatterySafe, 
   isLocationStale,
-  getIpLocationFallback
+  getIpLocationFallback,
+  calculateTrailDistance,
+  generateTileUrlsForArea
 } from '../services/geolocationService.js';
 import { showToast } from '../components/shared/Toast.jsx';
 
@@ -57,40 +59,22 @@ export function LocationProvider({ children }) {
     return saved !== null ? saved === 'true' : true;
   });
 
-// Hàm tạo file âm thanh tĩnh 2 giây chuẩn PCM WAV để giữ tiến trình trình duyệt chạy ngầm mượt mà như native app
-function createSilentAudioUrl() {
-  const sampleRate = 8000;
-  const numChannels = 1;
-  const bitsPerSample = 8;
-  const durationSec = 2;
-  const dataSize = sampleRate * durationSec;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
+  // 4. CHẾ ĐỘ ĐỊNH VỊ THÔNG MINH: 'battery_saver' (Mặc định - Tiết kiệm pin tối đa) | 'live_road' (Chế độ đi đường)
+  const [locationMode, setLocationModeState] = useState(() => {
+    return localStorage.getItem(`sc_loc_mode_${user?.id}`) || 'battery_saver';
+  });
+  const [liveRoadRemainingMins, setLiveRoadRemainingMins] = useState(0);
 
-  // RIFF header
-  view.setUint32(0, 0x52494646, false); // "RIFF"
-  view.setUint32(4, 36 + dataSize, true);
-  view.setUint32(8, 0x57415645, false); // "WAVE"
-  // fmt chunk
-  view.setUint32(12, 0x666d7420, false); // "fmt "
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); // PCM
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * numChannels * (bitsPerSample / 8), true);
-  view.setUint16(32, numChannels * (bitsPerSample / 8), true);
-  view.setUint16(34, bitsPerSample, true);
-  // data chunk
-  view.setUint32(36, 0x64617461, false); // "data"
-  view.setUint32(40, dataSize, true);
-  // 8-bit PCM 128 = Silence
-  new Uint8Array(buffer, 44, dataSize).fill(128);
+  // 5. Trạng thái đứng yên (Stationary) vs Đang di chuyển (Moving)
+  const [isStationary, setIsStationary] = useState(true);
 
-  const blob = new Blob([buffer], { type: 'audio/wav' });
-  return URL.createObjectURL(blob);
-}
+  // 6. Trạng thái mạng (Online / Offline)
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
-  // 5. Lộ trình di chuyển (Breadcrumbs Trail)
+  // 7. Cảnh báo pin yếu (< 20%)
+  const [isLowBattery, setIsLowBattery] = useState(false);
+
+  // 8. Lộ trình di chuyển (Breadcrumbs Trail)
   const [myTrail, setMyTrail] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(`sc_trail_me_${user?.id}`) || '[]');
@@ -109,12 +93,12 @@ function createSilentAudioUrl() {
     }
   });
 
-  const [showRouteTrail, setShowRouteTrail] = useState(true);
+  const [showRouteTrail, setShowRouteTrail] = useState(false);
 
-  // 6. Danh sách địa điểm đã lưu
+  // 9. Danh sách địa điểm đã lưu
   const [savedPlaces, setSavedPlaces] = useState([]);
 
-  // 7. Trạng thái GPS & Realtime
+  // 10. Trạng thái GPS & Realtime
   const [gpsStatus, setGpsStatus] = useState('searching'); // 'active' | 'searching' | 'denied' | 'error'
   const [gpsError, setGpsError] = useState(null);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
@@ -124,16 +108,28 @@ function createSilentAudioUrl() {
   const lastBroadcastTimeRef = useRef(0);
   const lastDbSaveTimeRef = useRef(0);
   const lastTrailSaveTimeRef = useRef(0);
+  const lastPositionRef = useRef(null);
   const watchIdRef = useRef(null);
   const channelRef = useRef(null);
   const isMountedRef = useRef(true);
   const myTrailRef = useRef(myTrail);
   myTrailRef.current = myTrail;
+  const locationModeRef = useRef(locationMode);
+  locationModeRef.current = locationMode;
+  const liveRoadExpiresAtRef = useRef(0);
+  const hasMovedInLiveRoadRef = useRef(false);
 
-  // Background Audio Keeper Refs (giúp trình duyệt không ngắt kết nối khi tắt màn hình)
+  // Background Audio Keeper Refs (Chỉ kích hoạt khi ở chế độ 'live_road')
   const audioContextRef = useRef(null);
   const audioElementRef = useRef(null);
   const wakeLockRef = useRef(null);
+
+  const myLocationRef = useRef(myLocation);
+  myLocationRef.current = myLocation;
+  const savedPlacesRef = useRef(savedPlaces);
+  savedPlacesRef.current = savedPlaces;
+  const myStatusMessageRef = useRef(myStatusMessage);
+  myStatusMessageRef.current = myStatusMessage;
 
   // ─── TÍNH KHOẢNG CÁCH GIỮA HAI NGƯỜI ───
   const distanceBetweenMeters = useMemo(() => {
@@ -152,27 +148,67 @@ function createSilentAudioUrl() {
     return isLocationStale(partnerLocation?.recorded_at, 180);
   }, [partnerLocation?.recorded_at]);
 
-  // ─── TỰ ĐỘNG CHẠY NGẦM BACKGROUND LIVE TRACKING (AUDIO KEEPER NHƯ CÁC APP LỚN) ───
+  // ─── THỐNG KÊ HÀNH TRÌNH HÔM NAY (TODAY STATS) ───
+  const todayStats = useMemo(() => {
+    const myDist = calculateTrailDistance(myTrail);
+    const partnerDist = calculateTrailDistance(partnerTrail);
+    return {
+      myDistanceKm: myDist,
+      partnerDistanceKm: partnerDist,
+      closestDistanceMeters: distanceBetweenMeters,
+      myPointsCount: myTrail.length,
+      partnerPointsCount: partnerTrail.length
+    };
+  }, [myTrail, partnerTrail, distanceBetweenMeters]);
+
+  // ─── TẠO FILE ÂM THANH TĨNH (CHỈ DÙNG KHI BẬT LIVE ROAD MODE) ───
+  function createSilentAudioUrl() {
+    const sampleRate = 8000;
+    const numChannels = 1;
+    const bitsPerSample = 8;
+    const durationSec = 2;
+    const dataSize = sampleRate * durationSec;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    view.setUint32(0, 0x52494646, false); // "RIFF"
+    view.setUint32(4, 36 + dataSize, true);
+    view.setUint32(8, 0x57415645, false); // "WAVE"
+    view.setUint32(12, 0x666d7420, false); // "fmt "
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numChannels * (bitsPerSample / 8), true);
+    view.setUint16(32, numChannels * (bitsPerSample / 8), true);
+    view.setUint16(34, bitsPerSample, true);
+    view.setUint32(36, 0x64617461, false); // "data"
+    view.setUint32(40, dataSize, true);
+    new Uint8Array(buffer, 44, dataSize).fill(128);
+
+    const blob = new Blob([buffer], { type: 'audio/wav' });
+    return URL.createObjectURL(blob);
+  }
+
+  // ─── KHỞI TẠO & HỦY BACKGROUND AUDIO KEEPER ───
   const startBackgroundKeeper = useCallback(async () => {
     try {
-      // 1. Khởi tạo silent HTML5 audio loop (chạy bền bỉ trên cả Chrome Mobile và iOS Safari mà không tốn pin)
       if (!audioElementRef.current) {
         const silentUrl = createSilentAudioUrl();
         const audio = new Audio(silentUrl);
         audio.loop = true;
-        audio.volume = 0.01; // Âm lượng cực nhỏ (không thể nghe thấy)
+        audio.volume = 0.01;
         audioElementRef.current = audio;
       }
       await audioElementRef.current.play().catch(() => {});
 
-      // 2. Web Audio API bổ trợ cho các dòng máy Android kén background HTML5 audio
       if (!audioContextRef.current) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (AudioCtx) {
           const ctx = new AudioCtx();
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
-          gain.gain.value = 0.0001; // Gần như tắt tiếng
+          gain.gain.value = 0.0001;
           osc.connect(gain);
           gain.connect(ctx.destination);
           osc.start();
@@ -182,13 +218,12 @@ function createSilentAudioUrl() {
         await audioContextRef.current.resume().catch(() => {});
       }
 
-      // 3. Đăng ký Media Session API để giữ tiến trình và hiện thẻ phát ngầm trên màn hình khóa điện thoại
       if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
         const pName = partner?.display_name || partner?.full_name || 'Người yêu';
         navigator.mediaSession.metadata = new MediaMetadata({
-          title: 'Couple Live Map 💕',
-          artist: `Đang tự động chia sẻ vị trí cho ${pName}`,
-          album: 'Schedule Couple Live Tracking',
+          title: 'Couple Live Map 🛵',
+          artist: `Đang bật chế độ đi đường chia sẻ cho ${pName}`,
+          album: 'Schedule Couple Live Road Mode',
           artwork: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }]
         });
         navigator.mediaSession.playbackState = 'playing';
@@ -203,7 +238,6 @@ function createSilentAudioUrl() {
         } catch {}
       }
 
-      // 4. Kích hoạt Screen Wake Lock nếu thiết bị hỗ trợ (khi đang mở màn hình)
       if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && !wakeLockRef.current) {
         try {
           wakeLockRef.current = await navigator.wakeLock.request('screen');
@@ -237,37 +271,65 @@ function createSilentAudioUrl() {
     }
   }, []);
 
-  // ─── TỰ ĐỘNG KÍCH HOẠT TIẾN TRÌNH CHẠY NGẦM LIÊN TỤC (TỰ ĐỘNG 100%, KHÔNG CẦN BẬT THỦ CÔNG) ───
-  useEffect(() => {
-    if (!isSharingEnabled) {
-      stopBackgroundKeeper();
-      return;
+  // ─── KÍCH HOẠT / HỦY CHẾ ĐỘ ĐI ĐƯỜNG LIVE (LIVE ROAD MODE) ───
+  const deactivateLiveRoad = useCallback((reason = '') => {
+    setLocationModeState('battery_saver');
+    locationModeRef.current = 'battery_saver';
+    try {
+      localStorage.setItem(`sc_loc_mode_${user?.id}`, 'battery_saver');
+    } catch {}
+    setLiveRoadRemainingMins(0);
+    liveRoadExpiresAtRef.current = 0;
+    hasMovedInLiveRoadRef.current = false;
+    stopBackgroundKeeper();
+    if (reason) {
+      showToast(reason, 'info');
     }
+  }, [user?.id, stopBackgroundKeeper]);
 
-    // 1. Kích hoạt ngay lập tức
+  const activateLiveRoad = useCallback((durationMins = 45) => {
+    setLocationModeState('live_road');
+    locationModeRef.current = 'live_road';
+    try {
+      localStorage.setItem(`sc_loc_mode_${user?.id}`, 'live_road');
+    } catch {}
+    const expireTime = Date.now() + durationMins * 60 * 1000;
+    liveRoadExpiresAtRef.current = expireTime;
+    setLiveRoadRemainingMins(durationMins);
+    hasMovedInLiveRoadRef.current = false;
     startBackgroundKeeper();
+    showToast(`Đã bật Chế độ Đi đường Live 🛵 (Tự tắt sau ${durationMins}p để bảo vệ pin)`, 'success');
+  }, [user?.id, startBackgroundKeeper]);
 
-    // 2. Kích hoạt dự phòng khi có chạm/vuốt màn hình đầu tiên (chuẩn Autoplay Policy trình duyệt)
-    const handleFirstInteraction = () => {
-      startBackgroundKeeper();
-    };
+  const setLocationMode = useCallback((mode, durationMins = 45) => {
+    if (mode === 'live_road') {
+      activateLiveRoad(durationMins);
+    } else {
+      deactivateLiveRoad('Đã chuyển sang chế độ Tiết kiệm pin 🍃');
+    }
+  }, [activateLiveRoad, deactivateLiveRoad]);
 
-    ['click', 'touchstart', 'pointerdown', 'scroll'].forEach(evt => {
-      window.addEventListener(evt, handleFirstInteraction, { once: true, passive: true });
-    });
+  // Bộ đếm lùi thời gian cho Live Road Mode & Tự động tắt khi hết giờ
+  useEffect(() => {
+    if (locationMode !== 'live_road') return;
 
-    return () => {
-      ['click', 'touchstart', 'pointerdown', 'scroll'].forEach(evt => {
-        window.removeEventListener(evt, handleFirstInteraction);
-      });
-    };
-  }, [isSharingEnabled, startBackgroundKeeper, stopBackgroundKeeper]);
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const leftMs = liveRoadExpiresAtRef.current - now;
+      if (leftMs <= 0) {
+        deactivateLiveRoad('Hành trình đã kết thúc! Tự động chuyển về Chế độ Tiết kiệm pin 🍃');
+      } else {
+        setLiveRoadRemainingMins(Math.ceil(leftMs / 60000));
+      }
+    }, 30000);
+
+    return () => clearInterval(timer);
+  }, [locationMode, deactivateLiveRoad]);
 
   // ─── LƯU LỘ TRÌNH VÀO DB VÀ LOCALSTORAGE (THROTTLED) ───
   const saveTrailToDatabase = useCallback(async (trailPoints) => {
     if (!user?.id || !couple?.id || !isSupabaseReady) return;
     try {
-      // Lưu danh sách tọa độ gần đây vào location_shares_config.share_mode dưới dạng JSON
       const serializedTrail = JSON.stringify(trailPoints.slice(-60));
       await supabase.from('location_shares_config').upsert({
         user_id: user.id,
@@ -307,7 +369,7 @@ function createSilentAudioUrl() {
     }
   }, [user?.id, couple?.id]);
 
-  // ─── XỬ LÝ KHI NHẬN TỌA ĐỘ GPS MỚI TỪ THIẾT BỊ ───
+  // ─── XỬ LÝ KHI NHẬN TỌA ĐỘ GPS MỚI TỪ THIẾT BỊ (VỚI BỘ LỌC ĐỨNG YÊN TIẾT KIỆM PIN) ───
   const handleNewGpsPosition = useCallback(async (position) => {
     if (!isMountedRef.current) return;
 
@@ -315,8 +377,45 @@ function createSilentAudioUrl() {
     setGpsStatus('active');
     setGpsError(null);
 
-    const battery = await getDeviceBatterySafe();
     const now = Date.now();
+    const battery = await getDeviceBatterySafe();
+
+    // 1. Kiểm tra pin yếu (< 20%) -> Tự kích hoạt Low Battery Guard
+    if (battery && battery.level <= 20 && !battery.charging) {
+      if (!isLowBattery) {
+        setIsLowBattery(true);
+        if (locationModeRef.current === 'live_road') {
+          deactivateLiveRoad('Pin dưới 20%! Tự động chuyển về Chế độ Tiết kiệm pin 🪫');
+        }
+      }
+    } else if (isLowBattery && battery && battery.level > 25) {
+      setIsLowBattery(false);
+    }
+
+    // 2. BỘ LỌC ĐỨNG YÊN (STATIONARY FILTER): Kiểm tra xem người dùng có thực sự di chuyển không
+    const prevPos = lastPositionRef.current;
+    let distMoved = 0;
+    if (prevPos) {
+      distMoved = calculateDistance(prevPos.latitude, prevPos.longitude, latitude, longitude) || 0;
+    }
+
+    const isMoving = distMoved >= 20 || (speed !== null && speed > 1.2);
+    setIsStationary(!isMoving);
+
+    if (isMoving && locationModeRef.current === 'live_road') {
+      hasMovedInLiveRoadRef.current = true;
+    }
+
+    // 3. TỰ ĐỘNG TẮT LIVE ROAD MODE KHI VỀ ĐẾN NHÀ (HOME GEOFENCE DETECTION)
+    if (locationModeRef.current === 'live_road' && hasMovedInLiveRoadRef.current && savedPlaces.length > 0) {
+      const homePlace = savedPlaces.find(p => p.category === 'home');
+      if (homePlace) {
+        const distToHome = calculateDistance(latitude, longitude, homePlace.latitude, homePlace.longitude);
+        if (distToHome !== null && distToHome < 120) {
+          deactivateLiveRoad('Đã về đến nhà an toàn! Tự động tắt Chế độ Đi đường 🏠');
+        }
+      }
+    }
 
     const locPayload = {
       user_id: user?.id,
@@ -335,13 +434,14 @@ function createSilentAudioUrl() {
       is_initial_placeholder: false
     };
 
-    // 1. Cập nhật vị trí của Tôi lập tức
     setMyLocation(locPayload);
+    lastPositionRef.current = { latitude, longitude };
+
     try {
       localStorage.setItem(`sc_loc_me_${user?.id}`, JSON.stringify(locPayload));
     } catch {}
 
-    // 2. Ghi nhận vào lộ trình di chuyển (Breadcrumbs)
+    // 4. Ghi nhận lộ trình di chuyển (Chỉ ghi khi thực sự di chuyển, lọc bỏ rung lắc đứng yên)
     const currentTrail = myTrailRef.current;
     const lastPoint = currentTrail[currentTrail.length - 1];
     let shouldAddPoint = false;
@@ -350,13 +450,11 @@ function createSilentAudioUrl() {
       shouldAddPoint = true;
     } else {
       const distFromLast = calculateDistance(lastPoint.lat, lastPoint.lng, latitude, longitude);
-      // Thêm điểm nếu di chuyển trên 15m hoặc đã quá 30 giây khi đang di chuyển
-      if (distFromLast >= 15 || (distFromLast >= 5 && (now - lastPoint.timestamp) >= 30000)) {
+      if (distFromLast >= 22 || (isMoving && distFromLast >= 14)) {
         shouldAddPoint = true;
       }
     }
 
-    let updatedTrail = currentTrail;
     const newTrailPoint = {
       lat: latitude,
       lng: longitude,
@@ -366,57 +464,74 @@ function createSilentAudioUrl() {
     };
 
     if (shouldAddPoint) {
-      updatedTrail = [...currentTrail.slice(-79), newTrailPoint];
+      const updatedTrail = [...currentTrail.slice(-79), newTrailPoint];
       setMyTrail(updatedTrail);
       myTrailRef.current = updatedTrail;
       try {
         localStorage.setItem(`sc_trail_me_${user?.id}`, JSON.stringify(updatedTrail));
       } catch {}
 
-      // Throttle lưu lộ trình vào DB (mỗi 25 giây)
-      if (now - lastTrailSaveTimeRef.current >= 25000) {
+      if (now - lastTrailSaveTimeRef.current >= 30000) {
         lastTrailSaveTimeRef.current = now;
         saveTrailToDatabase(updatedTrail);
       }
     }
 
-    // 3. Tra cứu địa chỉ trong nền
-    reverseGeocode(latitude, longitude).then(addr => {
-      if (addr && isMountedRef.current) {
-        setMyLocation(prev => {
-          if (prev?.latitude === latitude && prev?.longitude === longitude) {
-            const updated = { ...prev, address_name: addr };
-            try {
-              localStorage.setItem(`sc_loc_me_${user?.id}`, JSON.stringify(updated));
-            } catch {}
-            return updated;
-          }
-          return prev;
-        });
-      }
-    }).catch(() => {});
+    // 5. Tra cứu địa chỉ trong nền (chỉ gọi khi di chuyển để tiết kiệm mạng)
+    if (isMoving || !myLocation?.address_name || myLocation.address_name.startsWith('Đang')) {
+      reverseGeocode(latitude, longitude).then(addr => {
+        if (addr && isMountedRef.current) {
+          setMyLocation(prev => {
+            if (prev?.latitude === latitude && prev?.longitude === longitude) {
+              const updated = { ...prev, address_name: addr };
+              try {
+                localStorage.setItem(`sc_loc_me_${user?.id}`, JSON.stringify(updated));
+              } catch {}
+              return updated;
+            }
+            return prev;
+          });
+        }
+      }).catch(() => {});
+    }
 
     if (!isSharingEnabled) return;
 
-    // 4. Broadcast trực tiếp qua WebSocket Realtime cho người yêu (Throttle 2.5s)
-    if (channelRef.current && (now - lastBroadcastTimeRef.current >= 2500)) {
+    // 6. THUẬT TOÁN ĐIỀU TIẾT MẠNG TIẾT KIỆM PIN:
+    // - Khi di chuyển hoặc ở Live Road: Gửi thường xuyên (mỗi 3s - 5s).
+    // - Khi đứng yên (Stationary): Giãn ra 90s - 180s để điện thoại ngủ sâu!
+    const isLiveMode = locationModeRef.current === 'live_road';
+    const minBroadcastInterval = isLiveMode ? 2500 : (isMoving ? 6000 : 90000);
+    const minDbSaveInterval = isLiveMode ? 15000 : (isMoving ? 25000 : 180000);
+
+    if (channelRef.current && (now - lastBroadcastTimeRef.current >= minBroadcastInterval)) {
       lastBroadcastTimeRef.current = now;
       channelRef.current.send({
         type: 'broadcast',
         event: 'location_update',
         payload: {
           ...locPayload,
-          trail_point: shouldAddPoint ? newTrailPoint : null
+          trail_point: shouldAddPoint ? newTrailPoint : null,
+          is_stationary: !isMoving,
+          location_mode: locationModeRef.current
         }
       });
     }
 
-    // 5. Lưu vào couple_locations (Throttle 12s)
-    if (now - lastDbSaveTimeRef.current >= 12000) {
+    if (now - lastDbSaveTimeRef.current >= minDbSaveInterval) {
       lastDbSaveTimeRef.current = now;
       saveLocationToDatabase(locPayload);
     }
-  }, [isSharingEnabled, user?.id, myStatusMessage, saveLocationToDatabase, saveTrailToDatabase]);
+  }, [
+    isSharingEnabled, 
+    user?.id, 
+    myStatusMessage, 
+    savedPlaces, 
+    isLowBattery, 
+    deactivateLiveRoad, 
+    saveLocationToDatabase, 
+    saveTrailToDatabase
+  ]);
 
   // ─── IP FALLBACK NẾU THIẾT BỊ KHÔNG CÓ GPS (DESKTOP) ───
   const applyFallbackLocation = useCallback(async () => {
@@ -465,7 +580,7 @@ function createSilentAudioUrl() {
     }
   }, [user?.id, myStatusMessage]);
 
-  // ─── KHỞI TẠO THEO DÕI GPS LIÊN TỤC ───
+  // ─── THEO DÕI GPS LIÊN TỤC ───
   const startWatchingLocation = useCallback(() => {
     if (!('geolocation' in navigator)) {
       setGpsStatus('error');
@@ -477,9 +592,9 @@ function createSilentAudioUrl() {
     setGpsStatus('searching');
 
     const options = {
-      enableHighAccuracy: true,
+      enableHighAccuracy: !isLowBattery, // Tự động giảm hao pin khi pin yếu
       timeout: 10000,
-      maximumAge: 0 // Luôn lấy tọa độ thời gian thực mới nhất (không dùng cache)
+      maximumAge: 0
     };
 
     try {
@@ -516,7 +631,14 @@ function createSilentAudioUrl() {
       applyFallbackLocation();
       setGpsStatus('error');
     }
-  }, [handleNewGpsPosition, applyFallbackLocation]);
+  }, [handleNewGpsPosition, applyFallbackLocation, isLowBattery]);
+
+  const stopWatchingLocation = useCallback(() => {
+    if (watchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+  }, []);
 
   // ─── TOGGLE CHIA SẺ ───
   const toggleSharing = useCallback(async (enabled) => {
@@ -527,11 +649,15 @@ function createSilentAudioUrl() {
 
     if (!enabled) {
       showToast('Đã dừng chia sẻ vị trí với người yêu 🔒', 'info');
+      stopWatchingLocation();
       stopBackgroundKeeper();
     } else {
       setGpsStatus('searching');
       showToast('Đã bật chia sẻ vị trí với người yêu 📍', 'success');
       startWatchingLocation();
+      if (locationModeRef.current === 'live_road') {
+        startBackgroundKeeper();
+      }
     }
 
     if (user?.id && couple?.id && isSupabaseReady) {
@@ -552,31 +678,74 @@ function createSilentAudioUrl() {
         console.warn('Error updating sharing status:', err);
       }
     }
-  }, [user?.id, couple?.id, startWatchingLocation, stopBackgroundKeeper]);
+  }, [user?.id, couple?.id, startWatchingLocation, stopWatchingLocation, startBackgroundKeeper, stopBackgroundKeeper]);
+
+  // ─── LƯU BẢN ĐỒ OFFLINE VÀO MÁY (PRE-CACHE) ───
+  const downloadOfflineMapArea = useCallback(async (lat, lng) => {
+    const centerLat = lat || myLocation?.latitude;
+    const centerLng = lng || myLocation?.longitude;
+    if (!centerLat || !centerLng) {
+      showToast('Chưa có tọa độ để lưu bản đồ', 'error');
+      return { success: false };
+    }
+
+    try {
+      showToast('Đang tải bản đồ khu vực này vào bộ nhớ máy...', 'info');
+      const tileUrls = generateTileUrlsForArea(centerLat, centerLng, [14, 15, 16], 1);
+
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'PRECACHE_MAP_TILES',
+          urls: tileUrls
+        });
+      } else if ('caches' in window) {
+        const cache = await caches.open('couple-map-tiles-v2');
+        for (const url of tileUrls) {
+          try {
+            const has = await cache.match(url);
+            if (!has) {
+              const res = await fetch(url, { mode: 'no-cors' });
+              if (res) await cache.put(url, res);
+            }
+          } catch {}
+        }
+      }
+
+      setTimeout(() => {
+        showToast(`Đã lưu ${tileUrls.length} ảnh bản đồ! Xem thoải mái cả khi mất mạng 🗺️`, 'success');
+      }, 1200);
+
+      return { success: true, count: tileUrls.length };
+    } catch (err) {
+      console.warn('Precache map error:', err);
+      showToast('Không thể lưu bản đồ ngoại tuyến', 'error');
+      return { success: false };
+    }
+  }, [myLocation?.latitude, myLocation?.longitude]);
 
   // ─── TẢI DỮ LIỆU BAN ĐẦU & REALTIME SUBSCRIPTIONS ───
   useEffect(() => {
     isMountedRef.current = true;
 
-    // 1. Luôn theo dõi GPS ở cấp toàn cục (Global)
+    // 1. Lắng nghe trạng thái kết nối mạng (Online/Offline)
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('Đã có kết nối mạng trở lại 🌐', 'success');
+      if (myLocationRef.current?.latitude) {
+        saveLocationToDatabase(myLocationRef.current);
+      }
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('Đang mất mạng - Bản đồ đang chạy ở chế độ Offline ⚡', 'info');
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // 2. Bắt đầu theo dõi GPS
     startWatchingLocation();
 
-    // 2. Nhịp tim định kỳ kiểm tra GPS mỗi 8s đảm bảo vị trí luôn gửi liên tục khi di chuyển (như Life360/Google Maps)
-    const heartbeatTimer = setInterval(() => {
-      if (typeof navigator !== 'undefined' && navigator.geolocation && isSharingEnabled) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => handleNewGpsPosition(pos),
-          () => {},
-          {
-            enableHighAccuracy: true,
-            timeout: 8000,
-            maximumAge: 0
-          }
-        );
-      }
-    }, 8000);
-
-    // 2. Tải vị trí ban đầu của Tôi từ DB
+    // 3. Tải vị trí ban đầu của Tôi từ DB
     const fetchMyInitialLocation = async () => {
       if (!user?.id || !isSupabaseReady) return;
       try {
@@ -597,13 +766,32 @@ function createSilentAudioUrl() {
             return prev;
           });
         }
+
+        // Tải lộ trình đã lưu của Tôi từ DB
+        const { data: myConfig } = await supabase
+          .from('location_shares_config')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (myConfig?.share_mode && isMountedRef.current) {
+          try {
+            const parsedTrail = JSON.parse(myConfig.share_mode);
+            if (Array.isArray(parsedTrail) && parsedTrail.length > 0) {
+              setMyTrail(parsedTrail);
+              try {
+                localStorage.setItem(`sc_trail_me_${user.id}`, JSON.stringify(parsedTrail));
+              } catch {}
+            }
+          } catch {}
+        }
       } catch (err) {
-        console.warn('Failed to fetch my initial location from DB:', err);
+        console.warn('Failed to fetch my initial location/trail from DB:', err);
       }
     };
     fetchMyInitialLocation();
 
-    // 3. Tải vị trí & Lộ trình của Người yêu từ DB
+    // 4. Tải vị trí & Lộ trình của Người yêu từ DB
     const fetchPartnerInitialData = async () => {
       if (!isSupabaseReady) return;
       let partnerUserId = partner?.id;
@@ -613,7 +801,6 @@ function createSilentAudioUrl() {
       if (!partnerUserId) return;
 
       try {
-        // Tải vị trí mới nhất
         const { data: locData } = await supabase
           .from('couple_locations')
           .select('*')
@@ -627,7 +814,6 @@ function createSilentAudioUrl() {
           } catch {}
         }
 
-        // Tải lộ trình đã lưu của người yêu từ location_shares_config.share_mode
         const { data: configData } = await supabase
           .from('location_shares_config')
           .select('*')
@@ -651,7 +837,7 @@ function createSilentAudioUrl() {
     };
     fetchPartnerInitialData();
 
-    // 4. Tải danh sách địa điểm đã lưu
+    // 5. Tải danh sách địa điểm đã lưu
     const fetchSavedPlaces = async () => {
       if (!couple?.id || !isSupabaseReady) return;
       try {
@@ -670,7 +856,7 @@ function createSilentAudioUrl() {
     };
     fetchSavedPlaces();
 
-    // 5. Thiết lập Supabase Realtime Channel
+    // 6. Thiết lập Supabase Realtime Channel
     let channel = null;
     if (couple?.id && isSupabaseReady) {
       channel = supabase.channel(`couple_live_${couple.id}`, {
@@ -685,7 +871,6 @@ function createSilentAudioUrl() {
               localStorage.setItem(`sc_loc_partner_${payload.user_id}`, JSON.stringify(payload));
             } catch {}
 
-            // Nếu có điểm lộ trình mới đi kèm thì thêm vào partnerTrail
             if (payload.trail_point) {
               setPartnerTrail(prev => {
                 const updated = [...prev.slice(-79), payload.trail_point];
@@ -734,34 +919,65 @@ function createSilentAudioUrl() {
       channelRef.current = channel;
     }
 
-    // 6. Xử lý khi người dùng mở lại app / đánh thức màn hình (Page Visibility)
+    // 7. NHỊP TIM THÔNG MINH (CHỈ CHẠY KHI Ở CHẾ ĐỘ LIVE ROAD ĐỂ TIẾT KIỆM PIN)
+    const smartHeartbeatTimer = setInterval(() => {
+      if (typeof navigator !== 'undefined' && navigator.geolocation && isSharingEnabled) {
+        if (locationModeRef.current === 'live_road') {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => handleNewGpsPosition(pos),
+            () => {},
+            {
+              enableHighAccuracy: true,
+              timeout: 8000,
+              maximumAge: 0
+            }
+          );
+        }
+      }
+    }, 15000);
+
+    // 8. PAGE VISIBILITY: Xử lý thông minh khi tắt màn hình vs mở app
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
+        // Khi mở lại màn hình: lập tức cập nhật GPS và kéo vị trí mới của người yêu
         if (navigator.geolocation && isSharingEnabled) {
+          startWatchingLocation();
           navigator.geolocation.getCurrentPosition(handleNewGpsPosition, () => {}, {
-            enableHighAccuracy: true,
-            timeout: 8000
+            enableHighAccuracy: !isLowBattery,
+            timeout: 5000,
+            maximumAge: 0
           });
         }
         fetchPartnerInitialData();
+      } else {
+        // Khi tắt màn hình hoặc chuyển app:
+        // Nếu ở chế độ Tiết kiệm pin ('battery_saver'), dừng GPS ngay để máy ngủ sâu 100%!
+        if (locationModeRef.current === 'battery_saver') {
+          stopWatchingLocation();
+        }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       isMountedRef.current = false;
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
 
-      if (watchIdRef.current !== null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      }
+      stopWatchingLocation();
       if (channel) {
         supabase.removeChannel(channel);
       }
-      clearInterval(heartbeatTimer);
+      clearInterval(smartHeartbeatTimer);
       stopBackgroundKeeper();
     };
-  }, [couple?.id, partner?.id, isSharingEnabled, startWatchingLocation, handleNewGpsPosition, stopBackgroundKeeper]);
+  }, [
+    couple?.id, 
+    partner?.id, 
+    user?.id,
+    isSharingEnabled
+  ]);
 
   // ─── THAO TÁC ĐỊA ĐIỂM ĐÃ LƯU ───
   const addSavedPlace = async (name, category, lat, lon) => {
@@ -803,6 +1019,15 @@ function createSilentAudioUrl() {
   const sendQuickStatus = async (statusText) => {
     setMyStatusMessage(statusText);
     showToast(`Đã gửi trạng thái: "${statusText}" 💕`, 'success');
+
+    // Nếu người dùng báo "Đang trên đường về" -> Tự kích hoạt Live Road Mode
+    if (statusText.includes('trên đường về')) {
+      activateLiveRoad(45);
+    } 
+    // Nếu báo "Đã về đến nhà an toàn" -> Tự tắt Live Road Mode về Tiết kiệm pin
+    else if (statusText.includes('về đến nhà')) {
+      deactivateLiveRoad('Đã về đến nhà an toàn! Chuyển về Chế độ Tiết kiệm pin 🍃');
+    }
 
     if (myLocation) {
       const updatedLoc = { ...myLocation, status_message: statusText };
@@ -874,12 +1099,23 @@ function createSilentAudioUrl() {
     sendQuickStatus,
     myStatusMessage,
     refreshLocation: startWatchingLocation,
-    // Lộ trình di chuyển (Breadcrumbs)
+    // Chế độ định vị thông minh & Tiết kiệm pin
+    locationMode,
+    setLocationMode,
+    activateLiveRoad,
+    deactivateLiveRoad,
+    liveRoadRemainingMins,
+    isStationary,
+    isOnline,
+    isLowBattery,
+    downloadOfflineMapArea,
+    // Lộ trình di chuyển & Thống kê hành trình
     myTrail,
     partnerTrail,
     showRouteTrail,
     setShowRouteTrail,
-    clearMyTrail
+    clearMyTrail,
+    todayStats
   };
 
   return (
